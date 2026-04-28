@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -182,7 +182,11 @@ function App() {
     createInitialFlowNodes(initialConversationNodes)
   );
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [newBranchTopic, setNewBranchTopic] = useState('新分支');
   const [newBranchContent, setNewBranchContent] = useState('');
+  const [editRole, setEditRole] = useState<ConversationRole>('user');
+  const [editTopic, setEditTopic] = useState('');
+  const [editContent, setEditContent] = useState('');
 
   const selectedNode = useMemo(
     () => conversationNodes.find((node) => node.id === selectedNodeId) ?? null,
@@ -206,9 +210,27 @@ function App() {
       }));
   }, [conversationNodes]);
 
+  useEffect(() => {
+    if (!selectedNode) {
+      setEditRole('user');
+      setEditTopic('');
+      setEditContent('');
+      return;
+    }
+
+    setEditRole(selectedNode.role);
+    setEditTopic(selectedNode.topic);
+    setEditContent(selectedNode.content);
+  }, [selectedNode]);
+
   const handleAddBranch = () => {
     if (!selectedNode) {
       alert('請先選擇一個節點');
+      return;
+    }
+
+    if (!newBranchTopic.trim()) {
+      alert('請輸入分支主題');
       return;
     }
 
@@ -221,7 +243,7 @@ function App() {
       id: crypto.randomUUID(),
       parentId: selectedNode.id,
       role: 'user',
-      topic: '新分支',
+      topic: newBranchTopic.trim(),
       content: newBranchContent,
       createdAt: new Date().toISOString(),
     };
@@ -235,7 +257,72 @@ function App() {
     setConversationNodes((prev) => [...prev, newNode]);
     setFlowNodes((prev) => [...prev, toGraphNode(newNode, getBranchPosition(origin, siblingCount))]);
     setSelectedNodeId(newNode.id);
+    setNewBranchTopic('新分支');
     setNewBranchContent('');
+  };
+
+  const handleUpdateSelectedNode = () => {
+    if (!selectedNode) return;
+
+    if (!editTopic.trim()) {
+      alert('Topic 不能為空');
+      return;
+    }
+
+    if (!editContent.trim()) {
+      alert('Content 不能為空');
+      return;
+    }
+
+    setConversationNodes((prev) =>
+      prev.map((node) =>
+        node.id === selectedNode.id
+          ? {
+              ...node,
+              role: editRole,
+              topic: editTopic.trim(),
+              content: editContent,
+            }
+          : node
+      )
+    );
+
+    setFlowNodes((prev) =>
+      prev.map((node) =>
+        node.id === selectedNode.id
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                role: editRole,
+                topic: editTopic.trim(),
+              },
+            }
+          : node
+      )
+    );
+  };
+
+  const handleDeleteSelectedNode = () => {
+    if (!selectedNode) return;
+
+    const idsToDelete = new Set<string>();
+    const stack = [selectedNode.id];
+
+    while (stack.length > 0) {
+      const currentId = stack.pop();
+      if (!currentId || idsToDelete.has(currentId)) continue;
+
+      idsToDelete.add(currentId);
+
+      for (const node of conversationNodes) {
+        if (node.parentId === currentId) stack.push(node.id);
+      }
+    }
+
+    setConversationNodes((prev) => prev.filter((node) => !idsToDelete.has(node.id)));
+    setFlowNodes((prev) => prev.filter((node) => !idsToDelete.has(node.id)));
+    setSelectedNodeId(null);
   };
 
   return (
@@ -288,22 +375,50 @@ function App() {
 
               <div className="field">
                 <label>Role</label>
-                <div>{selectedNode.role}</div>
+                <select value={editRole} onChange={(event) => setEditRole(event.target.value as ConversationRole)}>
+                  <option value="user">user</option>
+                  <option value="assistant">assistant</option>
+                  <option value="system">system</option>
+                </select>
               </div>
 
               <div className="field">
                 <label>Topic</label>
-                <div>{selectedNode.topic}</div>
+                <input
+                  type="text"
+                  value={editTopic}
+                  onChange={(event) => setEditTopic(event.target.value)}
+                  placeholder="輸入主題..."
+                />
               </div>
 
               <div className="field">
                 <label>Content</label>
-                <p>{selectedNode.content}</p>
+                <textarea
+                  value={editContent}
+                  onChange={(event) => setEditContent(event.target.value)}
+                  placeholder="輸入內容..."
+                />
               </div>
+
+              <div className="field">
+                <label>UTC Timestamp</label>
+                <div>{new Date(selectedNode.createdAt).toISOString()}</div>
+              </div>
+
+              <button onClick={handleUpdateSelectedNode}>儲存節點修改</button>
+              <button onClick={handleDeleteSelectedNode}>刪除此節點（含子節點）</button>
 
               <hr />
 
               <h3>從此節點新增分支</h3>
+
+              <input
+                type="text"
+                value={newBranchTopic}
+                onChange={(event) => setNewBranchTopic(event.target.value)}
+                placeholder="輸入新的分支主題..."
+              />
 
               <textarea
                 value={newBranchContent}
