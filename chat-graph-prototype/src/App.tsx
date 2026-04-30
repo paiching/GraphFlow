@@ -29,8 +29,40 @@ import "./App.css";
 
 // ─── 型別定義 ────────────────────────────────────────────────────────────────
 
-/** 節點角色：使用者、AI 助理、或系統 */
-type ConversationRole = "user" | "assistant" | "system";
+/** 節點類別：筆記、對話、檔案、圖片 */
+type ConversationRole = "筆記" | "對話" | "檔案" | "圖片";
+
+function normalizeConversationRole(role: unknown): ConversationRole {
+  switch (role) {
+    case "筆記":
+    case "對話":
+    case "檔案":
+    case "圖片":
+      return role;
+    case "user":
+      return "筆記";
+    case "assistant":
+      return "對話";
+    case "system":
+      return "檔案";
+    default:
+      return "筆記";
+  }
+}
+
+function normalizeProjectsRole(
+  projects: Record<string, ConversationNode[]>,
+): Record<string, ConversationNode[]> {
+  return Object.fromEntries(
+    Object.entries(projects).map(([projectId, nodes]) => [
+      projectId,
+      nodes.map((node) => ({
+        ...node,
+        role: normalizeConversationRole(node.role),
+      })),
+    ]),
+  );
+}
 
 interface NodeDialogueEntry {
   id: string;
@@ -117,7 +149,7 @@ const initialProjects: Record<string, ConversationNode[]> = {
     {
       id: "1",
       parentId: null,
-      role: "user",
+      role: "筆記",
       topic: "圖譜搜尋",
       content: "知識搜尋系統，融合 AI Search 功能。",
       createdAt: new Date().toISOString(),
@@ -125,7 +157,7 @@ const initialProjects: Record<string, ConversationNode[]> = {
     {
       id: "2",
       parentId: "1",
-      role: "assistant",
+      role: "對話",
       topic: "專案架構",
       content:
         "可以使用 React Flow 建立即時關係視覺化介面，後端使用 ASP.NET Core Web API。",
@@ -134,7 +166,7 @@ const initialProjects: Record<string, ConversationNode[]> = {
     {
       id: "3",
       parentId: "2",
-      role: "user",
+      role: "筆記",
       topic: "前端",
       content: "前端部分要如何實作？",
       createdAt: new Date().toISOString(),
@@ -144,7 +176,7 @@ const initialProjects: Record<string, ConversationNode[]> = {
     {
       id: "a1",
       parentId: null,
-      role: "user",
+      role: "筆記",
       topic: "AI 專案",
       content: "這是另一個專案的根節點。",
       createdAt: new Date().toISOString(),
@@ -152,7 +184,7 @@ const initialProjects: Record<string, ConversationNode[]> = {
     {
       id: "a2",
       parentId: "a1",
-      role: "assistant",
+      role: "對話",
       topic: "AI 模型",
       content: "請選擇適合的 AI 模型架構。",
       createdAt: new Date().toISOString(),
@@ -306,6 +338,10 @@ function App() {
   const [chatActionNotice, setChatActionNotice] = useState<string | null>(null);
   const [previewDialogue, setPreviewDialogue] =
     useState<NodeDialogueEntry | null>(null);
+  const [editingDialogueId, setEditingDialogueId] = useState<string | null>(
+    null,
+  );
+  const [editingDialogueTitle, setEditingDialogueTitle] = useState("");
   const [openAIApiKey, setOpenAIApiKey] = useState(() =>
     localStorage.getItem(OPENAI_API_KEY_STORAGE_KEY) ?? "",
   );
@@ -337,16 +373,17 @@ function App() {
         const parsedProjects = rawProjects
           ? (JSON.parse(rawProjects) as Record<string, ConversationNode[]>)
           : initialProjects;
+        const normalizedProjects = normalizeProjectsRole(parsedProjects);
 
         const rawDialogues = localStorage.getItem(DIALOGUES_KEY);
-        if (!rawDialogues) return parsedProjects;
+        if (!rawDialogues) return normalizedProjects;
 
         const parsedDialogues = JSON.parse(rawDialogues) as DialoguesByProjectId;
         if (!parsedDialogues || typeof parsedDialogues !== "object") {
-          return parsedProjects;
+          return normalizedProjects;
         }
 
-        return mergeDialoguesIntoProjects(parsedProjects, parsedDialogues);
+        return mergeDialoguesIntoProjects(normalizedProjects, parsedDialogues);
       } catch {
         // ignore malformed localStorage data
       }
@@ -435,7 +472,7 @@ function App() {
   const [newBranchContent, setNewBranchContent] = useState("");
 
   // 目前右側面板正在編輯的節點內容
-  const [editRole, setEditRole] = useState<ConversationRole>("user");
+  const [editRole, setEditRole] = useState<ConversationRole>("筆記");
   const [editTopic, setEditTopic] = useState("");
   const [editContent, setEditContent] = useState("");
   const [editInDegree, setEditInDegree] = useState("");
@@ -595,6 +632,8 @@ function App() {
     return { id: selectedEdgeId, source: sourceNode, target: targetNode };
   }, [selectedEdgeId, conversationNodes]);
 
+  const isDashboardView = !selectedNode && !selectedEdgeData;
+
   const projectSnapshots = useMemo(
     () => snapshotsByProject[selectedProjectId] || [],
     [snapshotsByProject, selectedProjectId],
@@ -706,7 +745,7 @@ function App() {
   useEffect(() => {
     const timer = setTimeout(() => {
       if (!selectedNode) {
-        setEditRole("user");
+        setEditRole("筆記");
         setEditTopic("");
         setEditContent("");
         setEditInDegree("");
@@ -736,6 +775,8 @@ function App() {
     if (selectedNodeId) {
       setChatSaveTargetNodeId(selectedNodeId);
       setPreviewDialogue(null);
+      setEditingDialogueId(null);
+      setEditingDialogueTitle("");
       return;
     }
 
@@ -766,7 +807,7 @@ function App() {
       const newNode: ConversationNode = {
         id: crypto.randomUUID(),
         parentId: parentNode.id,
-        role: "user",
+        role: "筆記",
         topic: topic.trim(),
         content,
         createdAt: new Date().toISOString(),
@@ -1193,11 +1234,19 @@ function App() {
         return;
       }
 
+      const assistantIndex = chatMessages.findIndex((m) => m.id === message.id);
+      const previousUserMessage =
+        assistantIndex > 0
+          ? [...chatMessages.slice(0, assistantIndex)]
+              .reverse()
+              .find((m) => m.role === "user")
+          : undefined;
+
       const savedAt = new Date().toISOString();
       const newDialogue: NodeDialogueEntry = {
         id: crypto.randomUUID(),
         sourceMessageId: message.id,
-        title: getDialogueTitle(message.content.trim()),
+        title: previousUserMessage?.content.trim() || "使用者提問",
         content: message.content.trim(),
         createdAt: savedAt,
       };
@@ -1217,51 +1266,57 @@ function App() {
       setSelectedEdgeId(null);
       setChatActionNotice(`已存到對話：${targetNode.topic}`);
     },
-    [chatSaveTargetNodeId, conversationNodes, setConversationNodes],
+    [chatMessages, chatSaveTargetNodeId, conversationNodes, setConversationNodes],
   );
 
-  const handleRenameDialogueTitle = useCallback(
-    (dialogueId: string, currentTitle: string) => {
-      if (!selectedNode) return;
-
-      const nextTitle = window.prompt("請輸入新標題", currentTitle);
-      if (nextTitle === null) return;
-
-      const trimmedTitle = nextTitle.trim();
-      if (!trimmedTitle) {
-        alert("標題不可為空");
-        return;
-      }
-
-      setConversationNodes((prev) =>
-        prev.map((node) =>
-          node.id === selectedNode.id
-            ? {
-                ...node,
-                dialogues: (node.dialogues ?? []).map((dialogue) =>
-                  dialogue.id === dialogueId
-                    ? {
-                        ...dialogue,
-                        title: trimmedTitle,
-                      }
-                    : dialogue,
-                ),
-              }
-            : node,
-        ),
-      );
-
-      setPreviewDialogue((prev) =>
-        prev && prev.id === dialogueId
-          ? {
-              ...prev,
-              title: trimmedTitle,
-            }
-          : prev,
-      );
+  const handleStartEditingDialogueTitle = useCallback(
+    (dialogue: NodeDialogueEntry) => {
+      setEditingDialogueId(dialogue.id);
+      setEditingDialogueTitle(getDialogueDisplayTitle(dialogue));
     },
-    [selectedNode, setConversationNodes],
+    [],
   );
+
+  const handleCommitEditingDialogueTitle = useCallback(() => {
+    if (!selectedNode || !editingDialogueId) return;
+
+    const trimmedTitle = editingDialogueTitle.trim();
+    if (!trimmedTitle) {
+      setEditingDialogueId(null);
+      setEditingDialogueTitle("");
+      return;
+    }
+
+    setConversationNodes((prev) =>
+      prev.map((node) =>
+        node.id === selectedNode.id
+          ? {
+              ...node,
+              dialogues: (node.dialogues ?? []).map((dialogue) =>
+                dialogue.id === editingDialogueId
+                  ? {
+                      ...dialogue,
+                      title: trimmedTitle,
+                    }
+                  : dialogue,
+              ),
+            }
+          : node,
+      ),
+    );
+
+    setPreviewDialogue((prev) =>
+      prev && prev.id === editingDialogueId
+        ? {
+            ...prev,
+            title: trimmedTitle,
+          }
+        : prev,
+    );
+
+    setEditingDialogueId(null);
+    setEditingDialogueTitle("");
+  }, [editingDialogueId, editingDialogueTitle, selectedNode, setConversationNodes]);
 
   const handleExportNodeDialogues = useCallback(() => {
     if (!selectedNode) return;
@@ -1475,16 +1530,17 @@ function App() {
                     </div>
 
                     <div className="field">
-                      <label>Role</label>
+                      <label>類別</label>
                       <select
                         value={editRole}
                         onChange={(event) =>
                           setEditRole(event.target.value as ConversationRole)
                         }
                       >
-                        <option value="user">user</option>
-                        <option value="assistant">assistant</option>
-                        <option value="system">system</option>
+                        <option value="筆記">筆記</option>
+                        <option value="對話">對話</option>
+                        <option value="檔案">檔案</option>
+                        <option value="圖片">圖片</option>
                       </select>
                     </div>
 
@@ -1543,18 +1599,6 @@ function App() {
                                   <div className="node-dialogue-item__actions">
                                     <button
                                       type="button"
-                                      className="node-dialogue-item__rename"
-                                      onClick={() =>
-                                        handleRenameDialogueTitle(
-                                          dialogue.id,
-                                          getDialogueDisplayTitle(dialogue),
-                                        )
-                                      }
-                                    >
-                                      改名
-                                    </button>
-                                    <button
-                                      type="button"
                                       className="node-dialogue-item__toggle"
                                       onClick={() => setPreviewDialogue(dialogue)}
                                     >
@@ -1562,9 +1606,37 @@ function App() {
                                     </button>
                                   </div>
                                 </div>
-                                <div className="node-dialogue-item__title">
-                                  {getDialogueDisplayTitle(dialogue)}
-                                </div>
+                                {editingDialogueId === dialogue.id ? (
+                                  <input
+                                    type="text"
+                                    className="node-dialogue-item__title-input"
+                                    value={editingDialogueTitle}
+                                    onChange={(event) =>
+                                      setEditingDialogueTitle(event.target.value)
+                                    }
+                                    onBlur={handleCommitEditingDialogueTitle}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter") {
+                                        handleCommitEditingDialogueTitle();
+                                      }
+                                      if (event.key === "Escape") {
+                                        setEditingDialogueId(null);
+                                        setEditingDialogueTitle("");
+                                      }
+                                    }}
+                                    autoFocus
+                                  />
+                                ) : (
+                                  <div
+                                    className="node-dialogue-item__title"
+                                    onDoubleClick={() =>
+                                      handleStartEditingDialogueTitle(dialogue)
+                                    }
+                                    title="雙擊可編輯標題"
+                                  >
+                                    {getDialogueDisplayTitle(dialogue)}
+                                  </div>
+                                )}
                               </div>
                             </li>
                           ))}
@@ -1660,8 +1732,9 @@ function App() {
                   <p>請點選左側任一節點或邊查看內容。</p>
                 )}
 
-                <hr />
+                {isDashboardView && <hr />}
 
+                {isDashboardView && (
                 <section className="snapshot-panel">
                   <div className="snapshot-panel__header">
                     <h3>Snapshot Timeline</h3>
@@ -1742,6 +1815,7 @@ function App() {
                     </ol>
                   )}
                 </section>
+                )}
               </aside>
             </main>
 

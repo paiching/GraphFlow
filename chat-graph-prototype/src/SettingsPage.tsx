@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 
-type ConversationRole = "user" | "assistant" | "system";
+type ConversationRole = "筆記" | "對話" | "檔案" | "圖片";
 interface ConversationNode {
   id: string;
   parentId: string | null;

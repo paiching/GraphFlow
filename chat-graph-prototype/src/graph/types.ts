@@ -1,6 +1,6 @@
 import type { Node } from "@xyflow/react";
 
-export type GraphRole = "user" | "assistant" | "system";
+export type GraphRole = "筆記" | "對話" | "檔案" | "圖片";
 
 export interface GraphNodeData extends Record<string, unknown> {
   role: GraphRole;

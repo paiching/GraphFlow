@@ -519,14 +519,17 @@ hr {
     border 0.2s,
     box-shadow 0.2s;
 }
-.graph-node--user {
+.graph-node--筆記 {
   border-color: #38bdf8;
 }
-.graph-node--assistant {
+.graph-node--對話 {
   border-color: #a3e635;
 }
-.graph-node--system {
+.graph-node--檔案 {
   border-color: #fbbf24;
+}
+.graph-node--圖片 {
+  border-color: #f472b6;
 }
 .graph-node.is-selected {
   box-shadow: 0 0 0 4px #bae6fd;
@@ -768,16 +771,20 @@ button:hover {
     0 28px 58px rgba(245, 158, 11, 0.2);
 }
 
-.graph-node--user {
+.graph-node--筆記 {
   background: rgba(239, 246, 255, 0.9);
 }
 
-.graph-node--assistant {
+.graph-node--對話 {
   background: rgba(248, 250, 252, 0.9);
 }
 
-.graph-node--system {
+.graph-node--檔案 {
   background: rgba(240, 253, 244, 0.9);
+}
+
+.graph-node--圖片 {
+  background: rgba(253, 242, 248, 0.92);
 }
 
 .graph-node__role {
@@ -1178,27 +1185,31 @@ button:hover {
   gap: 6px;
 }
 
-.node-dialogue-item__rename {
-  width: auto;
-  margin: 0;
-  padding: 5px 10px;
-  border-radius: 10px;
-  font-size: 12px;
-  box-shadow: none;
-  background: rgba(100, 116, 139, 0.14);
-  color: #475569;
-}
-
-.node-dialogue-item__rename:hover {
-  background: rgba(100, 116, 139, 0.24);
-}
-
 .node-dialogue-item__title {
   font-size: 0.88rem;
   font-weight: 700;
   color: #1f2937;
   line-height: 1.45;
   margin: 2px 0;
+  cursor: text;
+}
+
+.node-dialogue-item__title-input {
+  width: 100%;
+  margin: 2px 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(14, 165, 233, 0.36);
+  background: #fff;
+  color: #0f172a;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.node-dialogue-item__title-input:focus {
+  outline: none;
+  border-color: rgba(14, 165, 233, 0.7);
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.15);
 }
 
 .node-dialogue-item__text {
