@@ -1,5 +1,8 @@
+// ─── React 核心 Hooks ────────────────────────────────────────────────────────
 import { useEffect, useMemo, useState, createContext, useContext } from "react";
+// ─── 設定頁面元件 ──────────────────────────────────────────────────────────────
 import SettingsPage from "./SettingsPage";
+// ─── ReactFlow 圖形化元件與工具函式 ───────────────────────────────────────────
 import {
   ReactFlow,
   Background,
@@ -15,8 +18,12 @@ import type { Edge, EdgeProps, Node, NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import "./App.css";
 
+// ─── 型別定義 ────────────────────────────────────────────────────────────────
+
+/** 節點角色：使用者、AI 助理、或系統 */
 type ConversationRole = "user" | "assistant" | "system";
 
+/** 對話節點的資料結構，儲存在 projects 狀態裡 */
 interface ConversationNode {
   id: string;
   parentId: string | null;
@@ -31,24 +38,35 @@ interface ConversationNode {
   edgeUpdatedAt?: string;
 }
 
+/** 傳給 ReactFlow 節點的顯示資料 */
 interface GraphNodeData extends Record<string, unknown> {
   role: ConversationRole;
   topic: string;
 }
 
+/** 傳給 ReactFlow 邊的顯示資料 */
 interface GraphEdgeData extends Record<string, unknown> {
+  /** 邊上顯示的關係標籤 */
   label?: string;
+  /** 此邊是否被選中（控制高亮） */
   isSelected?: boolean;
+  /** 是否顯示箭頭（來自 indegree/outdegree 設定） */
   showArrow?: boolean;
 }
 
+/** ReactFlow 節點型別別名 */
 type GraphFlowNode = Node<GraphNodeData, "circle">;
 
+// ─── 節點大小 Context ─────────────────────────────────────────────────────────
+/** localStorage 的 key，儲存節點大小設定 */
 const NODE_SIZE_KEY = "graph-node-size";
+/** 節點預設大小（像素） */
 const DEFAULT_NODE_SIZE = 148;
+/** 透過 Context 將節點大小傳給子元件（CircleNode、FloatingEdge），避免 prop drilling */
 const NodeSizeContext = createContext(DEFAULT_NODE_SIZE);
 
-// 多專案資料結構
+// ─── 初始資料 ────────────────────────────────────────────────────────────────
+// 程式首次執行時，若 localStorage 內尚無資料，則使用此預設多專案資料
 const initialProjects: Record<string, ConversationNode[]> = {
   projectA: [
     {
@@ -97,7 +115,11 @@ const initialProjects: Record<string, ConversationNode[]> = {
   ],
 };
 
+// ─── CircleNode — 圖譜節點元件 ──────────────────────────────────────────────────────
+// 心節點是圓形，大小由 NodeSizeContext 控制，顧名思義不需內建 props
+// selected 標記來自 ReactFlow，用于加上 "is-selected" CSS class
 function CircleNode({ data, selected }: NodeProps<GraphFlowNode>) {
+  // 從 Context 取得節點大小，計算相對於預設 148px 的縮放比例
   const nodeSize = useContext(NodeSizeContext);
   const scale = nodeSize / DEFAULT_NODE_SIZE;
   return (
@@ -143,16 +165,23 @@ function CircleNode({ data, selected }: NodeProps<GraphFlowNode>) {
   );
 }
 
+/** 將所有節點型別對映到元件，供 ReactFlow 使用 */
 const nodeTypes = { circle: CircleNode };
 
+// ─── FloatingEdge — 自訂邊線元件 ───────────────────────────────────────────────────
+// 不依賴 ReactFlow 內建的 Handle 連接點，自行計算在圆形轪廬上的起終點
+// 支援：滑鼠懸停高亮、選中高亮、關係標籤文字、箭頭 marker
 function FloatingEdge({ id, source, target, data }: EdgeProps) {
+  // 滑鼠是否懸停在此邊線上
   const [isHovered, setIsHovered] = useState(false);
   const nodeSize = useContext(NodeSizeContext);
+  // 從 ReactFlow Store 取得來源 / 目標節點的實際渲染資訊
   const sourceNode = useStore((s) => s.nodeLookup.get(source));
   const targetNode = useStore((s) => s.nodeLookup.get(target));
 
   if (!sourceNode || !targetNode) return null;
 
+  // 取得兩節點的絕對坐標與實際大小
   const sPos = sourceNode.internals.positionAbsolute;
   const tPos = targetNode.internals.positionAbsolute;
   const sW = sourceNode.measured?.width ?? nodeSize;
@@ -160,25 +189,31 @@ function FloatingEdge({ id, source, target, data }: EdgeProps) {
   const tW = targetNode.measured?.width ?? nodeSize;
   const tH = targetNode.measured?.height ?? nodeSize;
 
+  // 兩節點圓形的中心點
   const scx = sPos.x + sW / 2;
   const scy = sPos.y + sH / 2;
   const tcx = tPos.x + tW / 2;
   const tcy = tPos.y + tH / 2;
 
+  // 兩中心點間的方向向量與距離
   const dx = tcx - scx;
   const dy = tcy - scy;
   const dist = Math.hypot(dx, dy) || 1;
 
+  // 0.9 係數讓邊線不複蓋到節點團源的最外圈，留一點視覺間距
   const srcR = (sW / 2) * 0.9;
   const tgtR = (tW / 2) * 0.9;
 
+  // 邊線實際起點與終點（在圓形轪廬上）
   const startX = scx + (dx / dist) * srcR;
   const startY = scy + (dy / dist) * srcR;
   const endX = tcx - (dx / dist) * tgtR;
   const endY = tcy - (dy / dist) * tgtR;
+  // 邊線中點，用於渲染標籤文字
   const midX = (startX + endX) / 2;
   const midY = (startY + endY) / 2;
 
+  // 使用 getStraightPath 產生 SVG path 字串
   const [edgePath] = getStraightPath({
     sourceX: startX,
     sourceY: startY,
@@ -186,10 +221,12 @@ function FloatingEdge({ id, source, target, data }: EdgeProps) {
     targetY: endY,
   });
 
+  // 從 data 取得邊線上的標籤、選中狀態、箭頭顯示設定
   const edgeData = data as GraphEdgeData | undefined;
   const isSelected = edgeData?.isSelected ?? false;
-  const isActive = isHovered || isSelected;
+  const isActive = isHovered || isSelected; // 懸停或選中其中一種就工作
   const showArrow = edgeData?.showArrow ?? false;
+  // 高亮時用藍色，平時用半透明灰色
   const strokeColor = isActive ? "#3b82f6" : "rgba(100, 116, 139, 0.55)";
   const strokeWidth = isActive ? 2.5 : 1.5;
   const label = edgeData?.label;
@@ -199,7 +236,7 @@ function FloatingEdge({ id, source, target, data }: EdgeProps) {
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* invisible wide path for easier hover/click detection */}
+      {/* 隐形宬路，加大點擊跳薄區域，提升得點間化 */}
       <path
         d={edgePath}
         fill="none"
@@ -267,11 +304,17 @@ function FloatingEdge({ id, source, target, data }: EdgeProps) {
   );
 }
 
+/** 將所有邊線型別對映到元件，供 ReactFlow 使用 */
 const edgeTypes = { floating: FloatingEdge };
 
+// ─── 位置常數與型別 ───────────────────────────────────────────────────────────
+/** 存儲單一專案下所有節點位置的對映（節點 id → {x, y}） */
 type PositionByNodeId = Record<string, { x: number; y: number }>;
+/** 存儲所有專案的位置資料（專案 id → PositionByNodeId） */
 type PositionByProjectId = Record<string, PositionByNodeId>;
 
+// ─── 工具函數 ────────────────────────────────────────────────────────────────
+/** 將 ConversationNode 轉換成 ReactFlow 所需的 Node 格式 */
 function toGraphNode(
   node: ConversationNode,
   position: { x: number; y: number },
@@ -288,6 +331,10 @@ function toGraphNode(
   };
 }
 
+/**
+ * 計算節點在同心圓上的預設布局位置。
+ * index 越大會印到外圈，每圈容納 8 個節點。
+ */
 function getRadialPosition(index: number) {
   const ringCapacity = 8;
   const ring = Math.floor(index / ringCapacity) + 1;
@@ -302,6 +349,10 @@ function getRadialPosition(index: number) {
   };
 }
 
+/**
+ * 將 ConversationNode 陣列轉換為 ReactFlow 初始節點陣列。
+ * Root 節點水平排列，其餘節點其用同心圓布局。
+ */
 function createInitialFlowNodes(nodes: ConversationNode[]) {
   const rootNodes = nodes.filter((node) => node.parentId === null);
   const branchNodes = nodes.filter((node) => node.parentId !== null);
@@ -319,6 +370,10 @@ function createInitialFlowNodes(nodes: ConversationNode[]) {
   ];
 }
 
+/**
+ * 計算子節點的新增位置，不同兄弟節點会分散到不同角度。
+ * origin 為父節點的位置，siblingIndex 為已存在兄弟數量。
+ */
 function getBranchPosition(
   origin: { x: number; y: number },
   siblingIndex: number,
@@ -336,9 +391,16 @@ function getBranchPosition(
   };
 }
 
+// ─── localStorage Key 常數 ──────────────────────────────────────────────────────────────
+/** 專案資料存放在 localStorage 的 key */
 const LOCAL_KEY = "conversation-projects";
+/** 節點位置存放在 localStorage 的 key */
 const POSITIONS_KEY = "conversation-node-positions";
 
+/**
+ * 將已存 localStorage 的位置套用到節點初始位置上。
+ * 若某節點尚無儲存紀錄，則保留預設的同心圆/水平位置。
+ */
 function applySavedPositions(
   nodes: ConversationNode[],
   saved?: PositionByNodeId,
@@ -352,22 +414,23 @@ function applySavedPositions(
   });
 }
 
+// ─── App 主元件 ────────────────────────────────────────────────────────────────
 function App() {
-  // 多專案狀態
-
-  // 設定頁面顯示狀態
+  // 是否顯示設定頁面
   const [showSettings, setShowSettings] = useState(false);
-  // Node 大小設定
+
+  // 節點大小：從 localStorage 初始化，變更時同步存回 localStorage
   const [nodeSize, setNodeSize] = useState<number>(() => {
     const raw = localStorage.getItem(NODE_SIZE_KEY);
     const n = raw ? parseInt(raw, 10) : DEFAULT_NODE_SIZE;
     return isNaN(n) ? DEFAULT_NODE_SIZE : n;
   });
 
+  // 節點大小變動時，同步對應 localStorage
   useEffect(() => {
     localStorage.setItem(NODE_SIZE_KEY, String(nodeSize));
   }, [nodeSize]);
-  // 專案資料狀態
+  // 專案資料：結構為 { [projectId]: ConversationNode[] }，從 localStorage 初始化
   const [projects, setProjects] = useState<Record<string, ConversationNode[]>>(
     () => {
       try {
@@ -379,6 +442,8 @@ function App() {
       return initialProjects;
     },
   );
+
+  // 每個專案的節點位置記錄，從 localStorage 初始化
   const [positionsByProject, setPositionsByProject] =
     useState<PositionByProjectId>(() => {
       try {
@@ -390,17 +455,22 @@ function App() {
         return {};
       }
     });
+
+  // 目前選中的專案 ID，預設為第一個專案
   const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
     const keys = Object.keys(initialProjects);
     return keys[0];
   });
 
-  // 依據選擇的專案切換節點
-  // 用 useMemo 包裝，避免每次 render 都新建 array，並修正 useEffect 依賴
+  // 目前專案的節點陣列（用 useMemo 避免不必要的重建）
   const conversationNodes = useMemo(
     () => projects[selectedProjectId] || [],
     [projects, selectedProjectId],
   );
+  /**
+   * 修改當前專案的節點資料，並同步存回 localStorage。
+   * 接受 updater 函數以支援函數式更新式。
+   */
   const setConversationNodes = (
     updater: (prev: ConversationNode[]) => ConversationNode[],
   ) => {
@@ -414,34 +484,47 @@ function App() {
     });
   };
 
+  // ReactFlow 節點陣列：含位置資訊，底層由 ReactFlow 管理
   const [flowNodes, setFlowNodes, onNodesChange] = useNodesState<GraphFlowNode>(
     applySavedPositions(
       conversationNodes,
       positionsByProject[selectedProjectId],
     ),
   );
+
+  // 目前選中的節點 / 邊線 ID
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+
+  // 新增分支表單的輸入值
   const [newBranchTopic, setNewBranchTopic] = useState("新分支");
   const [newBranchContent, setNewBranchContent] = useState("");
+
+  // 目前右側面板正在編輯的節點內容
   const [editRole, setEditRole] = useState<ConversationRole>("user");
   const [editTopic, setEditTopic] = useState("");
   const [editContent, setEditContent] = useState("");
   const [editInDegree, setEditInDegree] = useState("");
   const [editOutDegree, setEditOutDegree] = useState("");
+
+  // 目前選中的邊線 ID 與正在編輯的邊線資料
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [editRelationship, setEditRelationship] = useState("");
   const [editEdgeContent, setEditEdgeContent] = useState("");
 
+  // 目前選中節點的完整資料（來自 conversationNodes）
   const selectedNode = useMemo(
     () => conversationNodes.find((node) => node.id === selectedNodeId) ?? null,
     [conversationNodes, selectedNodeId],
   );
 
+  // 目前選中節點的 ReactFlow 渲染資訊（位置等）
   const selectedFlowNode = useMemo(
     () => flowNodes.find((node) => node.id === selectedNodeId) ?? null,
     [flowNodes, selectedNodeId],
   );
 
+  // 將 conversationNodes 根據 parent-child 關係轉換為 ReactFlow 邊線
+  // showArrow 由 source.outdegree > 0 或 target.indegree > 0 決定
   const flowEdges: Edge[] = useMemo(() => {
     const nodeById = new Map(conversationNodes.map((node) => [node.id, node]));
     return conversationNodes
@@ -466,6 +549,7 @@ function App() {
       });
   }, [conversationNodes, selectedEdgeId]);
 
+  // 目前選中邊線的來源 / 目標節點完整資訊
   const selectedEdgeData = useMemo(() => {
     if (!selectedEdgeId) return null;
     const targetNode = conversationNodes.find(
@@ -479,7 +563,26 @@ function App() {
     return { id: selectedEdgeId, source: sourceNode, target: targetNode };
   }, [selectedEdgeId, conversationNodes]);
 
-  // 切換專案時，載入該專案上次位置
+  // 切換專案時：清除選取狀態，带入該專案上次儲存的節點位置
+  // 用 setTimeout 包裝避免 React 的 cascading setState 警告
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSelectedNodeId(null);
+      setSelectedEdgeId(null);
+      setFlowNodes(
+        applySavedPositions(
+          conversationNodes,
+          positionsByProject[selectedProjectId],
+        ),
+      );
+    }, 0);
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProjectId]);
+
+  // 節點被拖曳後，將最新位置儲存到 positionsByProject 與 localStorage
+  // 使用比較避免位置沒有變化時觸發不必要的重渲染
   useEffect(() => {
     const timer = setTimeout(() => {
       setSelectedNodeId(null);
@@ -528,11 +631,13 @@ function App() {
     return () => clearTimeout(timer);
   }, [flowNodes, selectedProjectId]);
 
-  // 專案資料變動時自動存 localStorage
+  // 專案資料變動時同步存回 localStorage（備賳：直接操作已在 setConversationNodes 裡完成）
   useEffect(() => {
     localStorage.setItem(LOCAL_KEY, JSON.stringify(projects));
   }, [projects]);
 
+  // 節點選取變動時，將節點現有資料填充到右側面板表單
+  // 用 setTimeout 避免 cascading setState
   useEffect(() => {
     const timer = setTimeout(() => {
       if (!selectedNode) {
@@ -562,6 +667,7 @@ function App() {
     return () => clearTimeout(timer);
   }, [selectedNode]);
 
+  // 邊線選取變動時，將關係標籤 / 關係內容填充到右側面板表單
   useEffect(() => {
     setTimeout(() => {
       setEditRelationship(selectedEdgeData?.target.relationship ?? "");
@@ -569,6 +675,8 @@ function App() {
     }, 0);
   }, [selectedEdgeData]);
 
+  // ─── 事件處理函數 ────────────────────────────────────────────────────────────
+  /** 新增子節點，並將其排列在父節點附近的同心圆位置 */
   const handleAddBranch = () => {
     if (!selectedNode) {
       alert("請先選擇一個節點");
@@ -610,6 +718,7 @@ function App() {
     setNewBranchContent("");
   };
 
+  /** 儲存選中邊線的關係標籤、關係內容，並更新最後修改時間 */
   const handleUpdateRelationship = () => {
     if (!selectedEdgeData) return;
     setConversationNodes((prev) =>
@@ -626,6 +735,7 @@ function App() {
     );
   };
 
+  /** 儲存節點修改（Role / Topic / Content / InDegree / OutDegree），包含驗證檢查 */
   const handleUpdateSelectedNode = () => {
     if (!selectedNode) return;
 
@@ -691,6 +801,7 @@ function App() {
     );
   };
 
+  /** 刪除選中節點以及所有子孙節點（深度優先遍歷） */
   const handleDeleteSelectedNode = () => {
     if (!selectedNode) return;
 
@@ -715,9 +826,12 @@ function App() {
     setSelectedNodeId(null);
   };
 
+  // ─── 渲染 ────────────────────────────────────────────────────────────────
+  // NodeSizeContext.Provider 將 nodeSize 屬數往下傳給 CircleNode 與 FloatingEdge
   return (
     <NodeSizeContext.Provider value={nodeSize}>
       <div className="app-container">
+        {/* 如果暫示設定頁面就渲染 SettingsPage，否則顯示主井幕 */}
         {showSettings ? (
           <SettingsPage
             projects={projects}
@@ -778,6 +892,7 @@ function App() {
             </header>
 
             <main className="app-main">
+              {/* 左側：ReactFlow 圖譜畫布 */}
               <section className="graph-panel">
                 <ReactFlow<GraphFlowNode, Edge>
                   nodes={flowNodes}
@@ -790,14 +905,17 @@ function App() {
                   minZoom={0.2}
                   maxZoom={1.6}
                   onNodeClick={(_event, node) => {
+                    // 點擊節點：選中節點、取消邊線選取
                     setSelectedNodeId(node.id);
                     setSelectedEdgeId(null);
                   }}
                   onEdgeClick={(_event, edge) => {
+                    // 點擊邊線：選中邊線、取消節點選取
                     setSelectedEdgeId(edge.id);
                     setSelectedNodeId(null);
                   }}
                   onPaneClick={() => {
+                    // 點擊空白區：取消所有選取
                     setSelectedNodeId(null);
                     setSelectedEdgeId(null);
                   }}
