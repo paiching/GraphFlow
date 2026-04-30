@@ -1,20 +1,24 @@
 // ─── React 核心 Hooks ────────────────────────────────────────────────────────
-import { useEffect, useMemo, useState, createContext, useContext } from "react";
+import { useEffect, useMemo, useState } from "react";
 // ─── 設定頁面元件 ──────────────────────────────────────────────────────────────
 import SettingsPage from "./SettingsPage";
+import CircleNode from "./graph/CircleNode";
+import FloatingEdge from "./graph/FloatingEdge";
+import {
+  DEFAULT_NODE_SIZE,
+  NODE_SIZE_KEY,
+  NodeSizeContext,
+} from "./graph/NodeSizeContext";
+import type { GraphEdgeData, GraphFlowNode } from "./graph/types";
 // ─── ReactFlow 圖形化元件與工具函式 ───────────────────────────────────────────
 import {
   ReactFlow,
   Background,
   BackgroundVariant,
   Controls,
-  Handle,
-  Position,
   useNodesState,
-  getStraightPath,
-  useStore,
 } from "@xyflow/react";
-import type { Edge, EdgeProps, Node, NodeProps } from "@xyflow/react";
+import type { Edge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import "./App.css";
 
@@ -37,33 +41,6 @@ interface ConversationNode {
   edgeContent?: string;
   edgeUpdatedAt?: string;
 }
-
-/** 傳給 ReactFlow 節點的顯示資料 */
-interface GraphNodeData extends Record<string, unknown> {
-  role: ConversationRole;
-  topic: string;
-}
-
-/** 傳給 ReactFlow 邊的顯示資料 */
-interface GraphEdgeData extends Record<string, unknown> {
-  /** 邊上顯示的關係標籤 */
-  label?: string;
-  /** 此邊是否被選中（控制高亮） */
-  isSelected?: boolean;
-  /** 是否顯示箭頭（來自 indegree/outdegree 設定） */
-  showArrow?: boolean;
-}
-
-/** ReactFlow 節點型別別名 */
-type GraphFlowNode = Node<GraphNodeData, "circle">;
-
-// ─── 節點大小 Context ─────────────────────────────────────────────────────────
-/** localStorage 的 key，儲存節點大小設定 */
-const NODE_SIZE_KEY = "graph-node-size";
-/** 節點預設大小（像素） */
-const DEFAULT_NODE_SIZE = 148;
-/** 透過 Context 將節點大小傳給子元件（CircleNode、FloatingEdge），避免 prop drilling */
-const NodeSizeContext = createContext(DEFAULT_NODE_SIZE);
 
 // ─── 初始資料 ────────────────────────────────────────────────────────────────
 // 程式首次執行時，若 localStorage 內尚無資料，則使用此預設多專案資料
@@ -115,196 +92,7 @@ const initialProjects: Record<string, ConversationNode[]> = {
   ],
 };
 
-// ─── CircleNode — 圖譜節點元件 ──────────────────────────────────────────────────────
-// 心節點是圓形，大小由 NodeSizeContext 控制，顧名思義不需內建 props
-// selected 標記來自 ReactFlow，用于加上 "is-selected" CSS class
-function CircleNode({ data, selected }: NodeProps<GraphFlowNode>) {
-  // 從 Context 取得節點大小，計算相對於預設 148px 的縮放比例
-  const nodeSize = useContext(NodeSizeContext);
-  const scale = nodeSize / DEFAULT_NODE_SIZE;
-  return (
-    <>
-      <Handle
-        className="graph-node__handle"
-        type="target"
-        position={Position.Top}
-      />
-      <div
-        className={[
-          "graph-node",
-          `graph-node--${data.role}`,
-          selected ? "is-selected" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        style={{
-          width: nodeSize,
-          height: nodeSize,
-          padding: Math.round(20 * scale),
-        }}
-      >
-        <span
-          className="graph-node__role"
-          style={{ fontSize: Math.round(11 * scale) }}
-        >
-          {data.role}
-        </span>
-        <strong
-          className="graph-node__title"
-          style={{ fontSize: Math.round(16 * scale) }}
-        >
-          {data.topic}
-        </strong>
-      </div>
-      <Handle
-        className="graph-node__handle"
-        type="source"
-        position={Position.Bottom}
-      />
-    </>
-  );
-}
-
-/** 將所有節點型別對映到元件，供 ReactFlow 使用 */
 const nodeTypes = { circle: CircleNode };
-
-// ─── FloatingEdge — 自訂邊線元件 ───────────────────────────────────────────────────
-// 不依賴 ReactFlow 內建的 Handle 連接點，自行計算在圆形轪廬上的起終點
-// 支援：滑鼠懸停高亮、選中高亮、關係標籤文字、箭頭 marker
-function FloatingEdge({ id, source, target, data }: EdgeProps) {
-  // 滑鼠是否懸停在此邊線上
-  const [isHovered, setIsHovered] = useState(false);
-  const nodeSize = useContext(NodeSizeContext);
-  // 從 ReactFlow Store 取得來源 / 目標節點的實際渲染資訊
-  const sourceNode = useStore((s) => s.nodeLookup.get(source));
-  const targetNode = useStore((s) => s.nodeLookup.get(target));
-
-  if (!sourceNode || !targetNode) return null;
-
-  // 取得兩節點的絕對坐標與實際大小
-  const sPos = sourceNode.internals.positionAbsolute;
-  const tPos = targetNode.internals.positionAbsolute;
-  const sW = sourceNode.measured?.width ?? nodeSize;
-  const sH = sourceNode.measured?.height ?? nodeSize;
-  const tW = targetNode.measured?.width ?? nodeSize;
-  const tH = targetNode.measured?.height ?? nodeSize;
-
-  // 兩節點圓形的中心點
-  const scx = sPos.x + sW / 2;
-  const scy = sPos.y + sH / 2;
-  const tcx = tPos.x + tW / 2;
-  const tcy = tPos.y + tH / 2;
-
-  // 兩中心點間的方向向量與距離
-  const dx = tcx - scx;
-  const dy = tcy - scy;
-  const dist = Math.hypot(dx, dy) || 1;
-
-  // 0.9 係數讓邊線不複蓋到節點團源的最外圈，留一點視覺間距
-  const srcR = (sW / 2) * 0.9;
-  const tgtR = (tW / 2) * 0.9;
-
-  // 邊線實際起點與終點（在圓形轪廬上）
-  const startX = scx + (dx / dist) * srcR;
-  const startY = scy + (dy / dist) * srcR;
-  const endX = tcx - (dx / dist) * tgtR;
-  const endY = tcy - (dy / dist) * tgtR;
-  // 邊線中點，用於渲染標籤文字
-  const midX = (startX + endX) / 2;
-  const midY = (startY + endY) / 2;
-
-  // 使用 getStraightPath 產生 SVG path 字串
-  const [edgePath] = getStraightPath({
-    sourceX: startX,
-    sourceY: startY,
-    targetX: endX,
-    targetY: endY,
-  });
-
-  // 從 data 取得邊線上的標籤、選中狀態、箭頭顯示設定
-  const edgeData = data as GraphEdgeData | undefined;
-  const isSelected = edgeData?.isSelected ?? false;
-  const isActive = isHovered || isSelected; // 懸停或選中其中一種就工作
-  const showArrow = edgeData?.showArrow ?? false;
-  // 高亮時用藍色，平時用半透明灰色
-  const strokeColor = isActive ? "#3b82f6" : "rgba(100, 116, 139, 0.55)";
-  const strokeWidth = isActive ? 2.5 : 1.5;
-  const label = edgeData?.label;
-
-  return (
-    <g
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
-      {/* 隐形宬路，加大點擊跳薄區域，提升得點間化 */}
-      <path
-        d={edgePath}
-        fill="none"
-        stroke="transparent"
-        strokeWidth={16}
-        style={{ cursor: "pointer" }}
-      />
-      <path
-        id={id}
-        d={edgePath}
-        fill="none"
-        stroke={strokeColor}
-        strokeWidth={strokeWidth}
-        markerEnd={showArrow ? `url(#arrow-${id})` : undefined}
-        style={{
-          transition: "stroke 0.15s, stroke-width 0.15s",
-          pointerEvents: "none",
-        }}
-      />
-      {showArrow && (
-        <defs>
-          <marker
-            id={`arrow-${id}`}
-            viewBox="0 0 10 10"
-            refX="8"
-            refY="5"
-            markerWidth="6"
-            markerHeight="6"
-            orient="auto-start-reverse"
-          >
-            <path d="M 0 0 L 10 5 L 0 10 z" fill={strokeColor} />
-          </marker>
-        </defs>
-      )}
-      {isActive && label && (
-        <>
-          <rect
-            x={midX - label.length * 4 - 8}
-            y={midY - 10}
-            width={label.length * 8 + 16}
-            height={20}
-            rx={4}
-            fill="rgba(239, 246, 255, 0.95)"
-            stroke="#3b82f6"
-            strokeWidth={1}
-            style={{ pointerEvents: "none" }}
-          />
-          <text
-            x={midX}
-            y={midY + 1}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            style={{
-              fontSize: "11px",
-              fill: "#3b82f6",
-              fontWeight: 500,
-              pointerEvents: "none",
-            }}
-          >
-            {label}
-          </text>
-        </>
-      )}
-    </g>
-  );
-}
-
-/** 將所有邊線型別對映到元件，供 ReactFlow 使用 */
 const edgeTypes = { floating: FloatingEdge };
 
 // ─── 位置常數與型別 ───────────────────────────────────────────────────────────
