@@ -1,11 +1,4 @@
-import {
-  useEffect,
-  useMemo,
-  useState,
-  useRef,
-  createContext,
-  useContext,
-} from "react";
+import { useEffect, useMemo, useState, createContext, useContext } from "react";
 import SettingsPage from "./SettingsPage";
 import {
   ReactFlow,
@@ -31,6 +24,8 @@ interface ConversationNode {
   topic: string;
   content: string;
   createdAt: string;
+  indegree?: number;
+  outdegree?: number;
   relationship?: string;
   edgeContent?: string;
   edgeUpdatedAt?: string;
@@ -44,6 +39,7 @@ interface GraphNodeData extends Record<string, unknown> {
 interface GraphEdgeData extends Record<string, unknown> {
   label?: string;
   isSelected?: boolean;
+  showArrow?: boolean;
 }
 
 type GraphFlowNode = Node<GraphNodeData, "circle">;
@@ -193,6 +189,7 @@ function FloatingEdge({ id, source, target, data }: EdgeProps) {
   const edgeData = data as GraphEdgeData | undefined;
   const isSelected = edgeData?.isSelected ?? false;
   const isActive = isHovered || isSelected;
+  const showArrow = edgeData?.showArrow ?? false;
   const strokeColor = isActive ? "#3b82f6" : "rgba(100, 116, 139, 0.55)";
   const strokeWidth = isActive ? 2.5 : 1.5;
   const label = edgeData?.label;
@@ -216,11 +213,27 @@ function FloatingEdge({ id, source, target, data }: EdgeProps) {
         fill="none"
         stroke={strokeColor}
         strokeWidth={strokeWidth}
+        markerEnd={showArrow ? `url(#arrow-${id})` : undefined}
         style={{
           transition: "stroke 0.15s, stroke-width 0.15s",
           pointerEvents: "none",
         }}
       />
+      {showArrow && (
+        <defs>
+          <marker
+            id={`arrow-${id}`}
+            viewBox="0 0 10 10"
+            refX="8"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" fill={strokeColor} />
+          </marker>
+        </defs>
+      )}
       {isActive && label && (
         <>
           <rect
@@ -255,6 +268,9 @@ function FloatingEdge({ id, source, target, data }: EdgeProps) {
 }
 
 const edgeTypes = { floating: FloatingEdge };
+
+type PositionByNodeId = Record<string, { x: number; y: number }>;
+type PositionByProjectId = Record<string, PositionByNodeId>;
 
 function toGraphNode(
   node: ConversationNode,
@@ -321,6 +337,20 @@ function getBranchPosition(
 }
 
 const LOCAL_KEY = "conversation-projects";
+const POSITIONS_KEY = "conversation-node-positions";
+
+function applySavedPositions(
+  nodes: ConversationNode[],
+  saved?: PositionByNodeId,
+) {
+  const initial = createInitialFlowNodes(nodes);
+  if (!saved) return initial;
+
+  return initial.map((node) => {
+    const pos = saved[node.id];
+    return pos ? { ...node, position: pos } : node;
+  });
+}
 
 function App() {
   // 多專案狀態
@@ -343,16 +373,27 @@ function App() {
       try {
         const raw = localStorage.getItem(LOCAL_KEY);
         if (raw) return JSON.parse(raw);
-      } catch {}
+      } catch {
+        // ignore malformed localStorage data
+      }
       return initialProjects;
     },
   );
+  const [positionsByProject, setPositionsByProject] =
+    useState<PositionByProjectId>(() => {
+      try {
+        const raw = localStorage.getItem(POSITIONS_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw) as PositionByProjectId;
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch {
+        return {};
+      }
+    });
   const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
     const keys = Object.keys(initialProjects);
     return keys[0];
   });
-  // 上傳檔案 input 參考
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 依據選擇的專案切換節點
   // 用 useMemo 包裝，避免每次 render 都新建 array，並修正 useEffect 依賴
@@ -374,7 +415,10 @@ function App() {
   };
 
   const [flowNodes, setFlowNodes, onNodesChange] = useNodesState<GraphFlowNode>(
-    createInitialFlowNodes(conversationNodes),
+    applySavedPositions(
+      conversationNodes,
+      positionsByProject[selectedProjectId],
+    ),
   );
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [newBranchTopic, setNewBranchTopic] = useState("新分支");
@@ -382,6 +426,8 @@ function App() {
   const [editRole, setEditRole] = useState<ConversationRole>("user");
   const [editTopic, setEditTopic] = useState("");
   const [editContent, setEditContent] = useState("");
+  const [editInDegree, setEditInDegree] = useState("");
+  const [editOutDegree, setEditOutDegree] = useState("");
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [editRelationship, setEditRelationship] = useState("");
   const [editEdgeContent, setEditEdgeContent] = useState("");
@@ -397,10 +443,14 @@ function App() {
   );
 
   const flowEdges: Edge[] = useMemo(() => {
+    const nodeById = new Map(conversationNodes.map((node) => [node.id, node]));
     return conversationNodes
       .filter((n) => n.parentId)
       .map((n) => {
         const edgeId = `edge-${n.parentId}-${n.id}`;
+        const sourceNode = nodeById.get(n.parentId as string);
+        const showArrow =
+          (sourceNode?.outdegree ?? 0) > 0 || (n.indegree ?? 0) > 0;
         return {
           id: edgeId,
           type: "floating",
@@ -409,6 +459,7 @@ function App() {
           data: {
             label: n.relationship ?? "",
             isSelected: edgeId === selectedEdgeId,
+            showArrow,
           } as GraphEdgeData,
           style: { stroke: "rgba(100, 116, 139, 0.55)", strokeWidth: 1.5 },
         };
@@ -428,12 +479,54 @@ function App() {
     return { id: selectedEdgeId, source: sourceNode, target: targetNode };
   }, [selectedEdgeId, conversationNodes]);
 
-  // 切換專案時，重設節點選擇與 flowNodes
+  // 切換專案時，載入該專案上次位置
   useEffect(() => {
-    setSelectedNodeId(null);
-    setFlowNodes(createInitialFlowNodes(conversationNodes));
+    const timer = setTimeout(() => {
+      setSelectedNodeId(null);
+      setSelectedEdgeId(null);
+      setFlowNodes(
+        applySavedPositions(
+          conversationNodes,
+          positionsByProject[selectedProjectId],
+        ),
+      );
+    }, 0);
+
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProjectId, conversationNodes]);
+  }, [selectedProjectId]);
+
+  // 任何拖曳造成的座標變更，都記錄到目前專案
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPositionsByProject((prev) => {
+        const nextProjectPositions: PositionByNodeId = {};
+        for (const node of flowNodes) {
+          nextProjectPositions[node.id] = node.position;
+        }
+
+        const prevProjectPositions = prev[selectedProjectId] || {};
+        const isSame =
+          Object.keys(prevProjectPositions).length ===
+            Object.keys(nextProjectPositions).length &&
+          Object.entries(nextProjectPositions).every(([id, pos]) => {
+            const prevPos = prevProjectPositions[id];
+            return prevPos && prevPos.x === pos.x && prevPos.y === pos.y;
+          });
+
+        if (isSame) return prev;
+
+        const updated = {
+          ...prev,
+          [selectedProjectId]: nextProjectPositions,
+        };
+        localStorage.setItem(POSITIONS_KEY, JSON.stringify(updated));
+        return updated;
+      });
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [flowNodes, selectedProjectId]);
 
   // 專案資料變動時自動存 localStorage
   useEffect(() => {
@@ -441,18 +534,32 @@ function App() {
   }, [projects]);
 
   useEffect(() => {
-    if (!selectedNode) {
-      // 避免 effect 內同步 setState 造成無限循環，改用 setTimeout
-      setTimeout(() => {
+    const timer = setTimeout(() => {
+      if (!selectedNode) {
         setEditRole("user");
         setEditTopic("");
         setEditContent("");
-      }, 0);
-      return;
-    }
-    setEditRole(selectedNode.role);
-    setEditTopic(selectedNode.topic);
-    setEditContent(selectedNode.content);
+        setEditInDegree("");
+        setEditOutDegree("");
+        return;
+      }
+
+      setEditRole(selectedNode.role);
+      setEditTopic(selectedNode.topic);
+      setEditContent(selectedNode.content);
+      setEditInDegree(
+        selectedNode.indegree !== undefined
+          ? String(selectedNode.indegree)
+          : "",
+      );
+      setEditOutDegree(
+        selectedNode.outdegree !== undefined
+          ? String(selectedNode.outdegree)
+          : "",
+      );
+    }, 0);
+
+    return () => clearTimeout(timer);
   }, [selectedNode]);
 
   useEffect(() => {
@@ -532,6 +639,27 @@ function App() {
       return;
     }
 
+    const parsedInDegree =
+      editInDegree.trim() === "" ? undefined : Number(editInDegree);
+    const parsedOutDegree =
+      editOutDegree.trim() === "" ? undefined : Number(editOutDegree);
+
+    if (
+      parsedInDegree !== undefined &&
+      (!Number.isInteger(parsedInDegree) || parsedInDegree < 0)
+    ) {
+      alert("InDegree 需為大於等於 0 的整數");
+      return;
+    }
+
+    if (
+      parsedOutDegree !== undefined &&
+      (!Number.isInteger(parsedOutDegree) || parsedOutDegree < 0)
+    ) {
+      alert("OutDegree 需為大於等於 0 的整數");
+      return;
+    }
+
     setConversationNodes((prev) =>
       prev.map((node) =>
         node.id === selectedNode.id
@@ -540,6 +668,8 @@ function App() {
               role: editRole,
               topic: editTopic.trim(),
               content: editContent,
+              indegree: parsedInDegree,
+              outdegree: parsedOutDegree,
             }
           : node,
       ),
@@ -570,43 +700,6 @@ function App() {
     while (stack.length > 0) {
       const currentId = stack.pop();
       if (!currentId || idsToDelete.has(currentId)) continue;
-
-      // 匯出 JSON
-      const handleExport = () => {
-        const data = JSON.stringify(projects, null, 2);
-        const blob = new Blob([data], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "conversation-projects.json";
-        a.click();
-        URL.revokeObjectURL(url);
-      };
-
-      // 上傳 JSON
-      const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (evt) => {
-          try {
-            const json = JSON.parse(evt.target?.result as string);
-            if (typeof json === "object" && json !== null) {
-              setProjects(json);
-              localStorage.setItem(LOCAL_KEY, JSON.stringify(json));
-              // 自動切到第一個專案
-              const keys = Object.keys(json);
-              if (keys.length > 0) setSelectedProjectId(keys[0]);
-              alert("匯入成功！");
-            } else {
-              alert("檔案格式錯誤");
-            }
-          } catch {
-            alert("檔案解析失敗");
-          }
-        };
-        reader.readAsText(file);
-      };
 
       idsToDelete.add(currentId);
 
@@ -810,6 +903,48 @@ function App() {
                         onChange={(event) => setEditContent(event.target.value)}
                         placeholder="輸入內容..."
                       />
+                    </div>
+
+                    <div className="field">
+                      <label>InDegree（可設定）</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={editInDegree}
+                        onChange={(event) =>
+                          setEditInDegree(event.target.value)
+                        }
+                        placeholder="例如 2"
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label>OutDegree（可設定）</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={editOutDegree}
+                        onChange={(event) =>
+                          setEditOutDegree(event.target.value)
+                        }
+                        placeholder="例如 3"
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label>目前連線統計</label>
+                      <div>
+                        indegree: {selectedNode.parentId ? 1 : 0}
+                        {" | "}
+                        outdegree:{" "}
+                        {
+                          conversationNodes.filter(
+                            (n) => n.parentId === selectedNode.id,
+                          ).length
+                        }
+                      </div>
                     </div>
 
                     <div className="field">
