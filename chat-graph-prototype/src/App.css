@@ -1101,6 +1101,12 @@ button:hover {
   margin-bottom: 10px;
 }
 
+.node-dialogue-panel__title-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .node-dialogue-panel__header h3 {
   margin: 0;
   font-size: 14px;
@@ -1114,6 +1120,26 @@ button:hover {
   border-radius: 999px;
   padding: 2px 8px;
   font-weight: 700;
+}
+
+.node-dialogue-export-btn {
+  width: auto;
+  margin: 0;
+  padding: 5px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  box-shadow: none;
+  background: rgba(14, 165, 233, 0.12);
+  color: #0369a1;
+}
+
+.node-dialogue-export-btn:hover {
+  background: rgba(14, 165, 233, 0.2);
+}
+
+.node-dialogue-export-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .node-dialogue-empty {
@@ -1146,6 +1172,27 @@ button:hover {
   background: rgba(15, 118, 110, 0.2);
 }
 
+.node-dialogue-item__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.node-dialogue-item__rename {
+  width: auto;
+  margin: 0;
+  padding: 5px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  box-shadow: none;
+  background: rgba(100, 116, 139, 0.14);
+  color: #475569;
+}
+
+.node-dialogue-item__rename:hover {
+  background: rgba(100, 116, 139, 0.24);
+}
+
 .node-dialogue-item__title {
   font-size: 0.88rem;
   font-weight: 700;
@@ -1155,10 +1202,88 @@ button:hover {
 }
 
 .node-dialogue-item__text {
-  margin-top: 8px;
   font-size: 0.88rem;
   color: #1e293b;
   line-height: 1.5;
+}
+
+.dialogue-preview-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dialogue-preview-backdrop {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  width: 100%;
+  border: none;
+  background: rgba(15, 23, 42, 0.45);
+  border-radius: 0;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.dialogue-preview-backdrop:hover,
+.dialogue-preview-backdrop:focus,
+.dialogue-preview-backdrop:focus-visible {
+  background: rgba(15, 23, 42, 0.45);
+  box-shadow: none;
+  outline: none;
+}
+
+.dialogue-preview-content {
+  position: relative;
+  z-index: 1;
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(82vh, 900px);
+  overflow: auto;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: #ffffff;
+  box-shadow: 0 24px 58px rgba(15, 23, 42, 0.28);
+  padding: 14px 16px 16px;
+}
+
+.dialogue-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  padding-bottom: 10px;
+}
+
+.dialogue-preview-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: #0f172a;
+}
+
+.dialogue-preview-header p {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.dialogue-preview-close {
+  width: auto;
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 10px;
+  box-shadow: none;
+  background: rgba(148, 163, 184, 0.2);
+  color: #334155;
+  font-size: 0.8rem;
+}
+
+.dialogue-preview-close:hover {
+  background: rgba(148, 163, 184, 0.28);
 }
 
 .node-dialogue-item__text > *:first-child {

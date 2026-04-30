@@ -35,9 +35,13 @@ type ConversationRole = "user" | "assistant" | "system";
 interface NodeDialogueEntry {
   id: string;
   sourceMessageId: string;
+  title?: string;
   content: string;
   createdAt: string;
 }
+
+type DialoguesByNodeId = Record<string, NodeDialogueEntry[]>;
+type DialoguesByProjectId = Record<string, DialoguesByNodeId>;
 
 function getDialogueTitle(content: string) {
   const normalized = content
@@ -49,6 +53,45 @@ function getDialogueTitle(content: string) {
 
   const heading = normalized.replace(/^#{1,6}\s+/, "");
   return heading.length > 48 ? `${heading.slice(0, 48)}...` : heading;
+}
+
+function getDialogueDisplayTitle(dialogue: NodeDialogueEntry) {
+  const customTitle = dialogue.title?.trim();
+  if (customTitle) return customTitle;
+  return getDialogueTitle(dialogue.content);
+}
+
+function extractDialoguesByProject(
+  projects: Record<string, ConversationNode[]>,
+): DialoguesByProjectId {
+  return Object.fromEntries(
+    Object.entries(projects).map(([projectId, nodes]) => [
+      projectId,
+      Object.fromEntries(
+        nodes
+          .filter((node) => (node.dialogues?.length ?? 0) > 0)
+          .map((node) => [node.id, node.dialogues ?? []]),
+      ),
+    ]),
+  );
+}
+
+function mergeDialoguesIntoProjects(
+  projects: Record<string, ConversationNode[]>,
+  dialoguesByProject: DialoguesByProjectId,
+) {
+  return Object.fromEntries(
+    Object.entries(projects).map(([projectId, nodes]) => {
+      const dialoguesByNode = dialoguesByProject[projectId] ?? {};
+      return [
+        projectId,
+        nodes.map((node) => ({
+          ...node,
+          dialogues: dialoguesByNode[node.id] ?? node.dialogues ?? [],
+        })),
+      ];
+    }),
+  ) as Record<string, ConversationNode[]>;
 }
 
 /** 對話節點的資料結構，儲存在 projects 狀態裡 */
@@ -230,6 +273,8 @@ const SNAPSHOTS_KEY = "conversation-project-snapshots";
 const SNAPSHOT_PLAYBACK_INTERVAL_KEY = "snapshot-playback-interval-ms";
 /** OpenAI API Key 存放 key */
 const OPENAI_API_KEY_STORAGE_KEY = "openai-api-key";
+/** Node 對話紀錄獨立存放 key */
+const DIALOGUES_KEY = "conversation-node-dialogues";
 
 /**
  * 將已存 localStorage 的位置套用到節點初始位置上。
@@ -259,9 +304,8 @@ function App() {
   const [chatError, setChatError] = useState<string | null>(null);
   const [chatSaveTargetNodeId, setChatSaveTargetNodeId] = useState("");
   const [chatActionNotice, setChatActionNotice] = useState<string | null>(null);
-  const [expandedDialogueId, setExpandedDialogueId] = useState<string | null>(
-    null,
-  );
+  const [previewDialogue, setPreviewDialogue] =
+    useState<NodeDialogueEntry | null>(null);
   const [openAIApiKey, setOpenAIApiKey] = useState(() =>
     localStorage.getItem(OPENAI_API_KEY_STORAGE_KEY) ?? "",
   );
@@ -289,8 +333,20 @@ function App() {
   const [projects, setProjects] = useState<Record<string, ConversationNode[]>>(
     () => {
       try {
-        const raw = localStorage.getItem(LOCAL_KEY);
-        if (raw) return JSON.parse(raw);
+        const rawProjects = localStorage.getItem(LOCAL_KEY);
+        const parsedProjects = rawProjects
+          ? (JSON.parse(rawProjects) as Record<string, ConversationNode[]>)
+          : initialProjects;
+
+        const rawDialogues = localStorage.getItem(DIALOGUES_KEY);
+        if (!rawDialogues) return parsedProjects;
+
+        const parsedDialogues = JSON.parse(rawDialogues) as DialoguesByProjectId;
+        if (!parsedDialogues || typeof parsedDialogues !== "object") {
+          return parsedProjects;
+        }
+
+        return mergeDialoguesIntoProjects(parsedProjects, parsedDialogues);
       } catch {
         // ignore malformed localStorage data
       }
@@ -630,6 +686,11 @@ function App() {
   }, [projects]);
 
   useEffect(() => {
+    const dialogues = extractDialoguesByProject(projects);
+    localStorage.setItem(DIALOGUES_KEY, JSON.stringify(dialogues));
+  }, [projects]);
+
+  useEffect(() => {
     localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(snapshotsByProject));
   }, [snapshotsByProject]);
 
@@ -674,7 +735,7 @@ function App() {
   useEffect(() => {
     if (selectedNodeId) {
       setChatSaveTargetNodeId(selectedNodeId);
-      setExpandedDialogueId(null);
+      setPreviewDialogue(null);
       return;
     }
 
@@ -1136,6 +1197,7 @@ function App() {
       const newDialogue: NodeDialogueEntry = {
         id: crypto.randomUUID(),
         sourceMessageId: message.id,
+        title: getDialogueTitle(message.content.trim()),
         content: message.content.trim(),
         createdAt: savedAt,
       };
@@ -1157,6 +1219,77 @@ function App() {
     },
     [chatSaveTargetNodeId, conversationNodes, setConversationNodes],
   );
+
+  const handleRenameDialogueTitle = useCallback(
+    (dialogueId: string, currentTitle: string) => {
+      if (!selectedNode) return;
+
+      const nextTitle = window.prompt("請輸入新標題", currentTitle);
+      if (nextTitle === null) return;
+
+      const trimmedTitle = nextTitle.trim();
+      if (!trimmedTitle) {
+        alert("標題不可為空");
+        return;
+      }
+
+      setConversationNodes((prev) =>
+        prev.map((node) =>
+          node.id === selectedNode.id
+            ? {
+                ...node,
+                dialogues: (node.dialogues ?? []).map((dialogue) =>
+                  dialogue.id === dialogueId
+                    ? {
+                        ...dialogue,
+                        title: trimmedTitle,
+                      }
+                    : dialogue,
+                ),
+              }
+            : node,
+        ),
+      );
+
+      setPreviewDialogue((prev) =>
+        prev && prev.id === dialogueId
+          ? {
+              ...prev,
+              title: trimmedTitle,
+            }
+          : prev,
+      );
+    },
+    [selectedNode, setConversationNodes],
+  );
+
+  const handleExportNodeDialogues = useCallback(() => {
+    if (!selectedNode) return;
+
+    const dialogues = selectedNode.dialogues ?? [];
+    if (dialogues.length === 0) {
+      alert("目前沒有可匯出的對話紀錄");
+      return;
+    }
+
+    const payload = {
+      projectId: selectedProjectId,
+      nodeId: selectedNode.id,
+      nodeTopic: selectedNode.topic,
+      exportedAt: new Date().toISOString(),
+      dialogues,
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `node-dialogues-${selectedNode.id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [selectedNode, selectedProjectId]);
 
   // ─── 渲染 ────────────────────────────────────────────────────────────────
   // NodeSizeContext.Provider 將 nodeSize 屬數往下傳給 CircleNode 與 FloatingEdge
@@ -1377,7 +1510,17 @@ function App() {
 
                     <section className="node-dialogue-panel">
                       <div className="node-dialogue-panel__header">
-                        <h3>對話紀錄</h3>
+                        <div className="node-dialogue-panel__title-wrap">
+                          <h3>對話紀錄</h3>
+                          <button
+                            type="button"
+                            className="node-dialogue-export-btn"
+                            onClick={handleExportNodeDialogues}
+                            disabled={selectedNodeDialogues.length === 0}
+                          >
+                            匯出對話
+                          </button>
+                        </div>
                         <span className="node-dialogue-panel__count">
                           {selectedNodeDialogues.length} 則
                         </span>
@@ -1397,30 +1540,31 @@ function App() {
                                   <span className="snapshot-item__time">
                                     {new Date(dialogue.createdAt).toLocaleString()}
                                   </span>
-                                  <button
-                                    type="button"
-                                    className="node-dialogue-item__toggle"
-                                    onClick={() =>
-                                      setExpandedDialogueId((prev) =>
-                                        prev === dialogue.id ? null : dialogue.id,
-                                      )
-                                    }
-                                  >
-                                    {expandedDialogueId === dialogue.id
-                                      ? "收合"
-                                      : "展開"}
-                                  </button>
+                                  <div className="node-dialogue-item__actions">
+                                    <button
+                                      type="button"
+                                      className="node-dialogue-item__rename"
+                                      onClick={() =>
+                                        handleRenameDialogueTitle(
+                                          dialogue.id,
+                                          getDialogueDisplayTitle(dialogue),
+                                        )
+                                      }
+                                    >
+                                      改名
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="node-dialogue-item__toggle"
+                                      onClick={() => setPreviewDialogue(dialogue)}
+                                    >
+                                      檢視
+                                    </button>
+                                  </div>
                                 </div>
                                 <div className="node-dialogue-item__title">
-                                  {getDialogueTitle(dialogue.content)}
+                                  {getDialogueDisplayTitle(dialogue)}
                                 </div>
-                                {expandedDialogueId === dialogue.id && (
-                                  <div className="node-dialogue-item__text">
-                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                      {dialogue.content}
-                                    </ReactMarkdown>
-                                  </div>
-                                )}
                               </div>
                             </li>
                           ))}
@@ -1725,6 +1869,44 @@ function App() {
                   </p>
                 )}
               </section>
+            )}
+
+            {previewDialogue && (
+              <div
+                className="dialogue-preview-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-label="對話內容檢視"
+              >
+                <button
+                  type="button"
+                  className="dialogue-preview-backdrop"
+                  onClick={() => setPreviewDialogue(null)}
+                  aria-label="關閉"
+                />
+                <div className="dialogue-preview-content">
+                  <div className="dialogue-preview-header">
+                    <div>
+                      <h3>{getDialogueDisplayTitle(previewDialogue)}</h3>
+                      <p>
+                        {new Date(previewDialogue.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="dialogue-preview-close"
+                      onClick={() => setPreviewDialogue(null)}
+                    >
+                      關閉
+                    </button>
+                  </div>
+                  <div className="node-dialogue-item__text">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {previewDialogue.content}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+              </div>
             )}
           </>
         )}
