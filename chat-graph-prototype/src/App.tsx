@@ -8,7 +8,6 @@ import {
   Handle,
   Position,
   useNodesState,
-  BaseEdge,
   getStraightPath,
   useStore,
 } from "@xyflow/react";
@@ -25,11 +24,19 @@ interface ConversationNode {
   topic: string;
   content: string;
   createdAt: string;
+  relationship?: string;
+  edgeContent?: string;
+  edgeUpdatedAt?: string;
 }
 
 interface GraphNodeData extends Record<string, unknown> {
   role: ConversationRole;
   topic: string;
+}
+
+interface GraphEdgeData extends Record<string, unknown> {
+  label?: string;
+  isSelected?: boolean;
 }
 
 type GraphFlowNode = Node<GraphNodeData, "circle">;
@@ -114,7 +121,8 @@ function CircleNode({ data, selected }: NodeProps<GraphFlowNode>) {
 
 const nodeTypes = { circle: CircleNode };
 
-function FloatingEdge({ id, source, target, style }: EdgeProps) {
+function FloatingEdge({ id, source, target, data }: EdgeProps) {
+  const [isHovered, setIsHovered] = useState(false);
   const sourceNode = useStore((s) => s.nodeLookup.get(source));
   const targetNode = useStore((s) => s.nodeLookup.get(target));
 
@@ -139,14 +147,82 @@ function FloatingEdge({ id, source, target, style }: EdgeProps) {
   const srcR = (sW / 2) * 0.9;
   const tgtR = (tW / 2) * 0.9;
 
+  const startX = scx + (dx / dist) * srcR;
+  const startY = scy + (dy / dist) * srcR;
+  const endX = tcx - (dx / dist) * tgtR;
+  const endY = tcy - (dy / dist) * tgtR;
+  const midX = (startX + endX) / 2;
+  const midY = (startY + endY) / 2;
+
   const [edgePath] = getStraightPath({
-    sourceX: scx + (dx / dist) * srcR,
-    sourceY: scy + (dy / dist) * srcR,
-    targetX: tcx - (dx / dist) * tgtR,
-    targetY: tcy - (dy / dist) * tgtR,
+    sourceX: startX,
+    sourceY: startY,
+    targetX: endX,
+    targetY: endY,
   });
 
-  return <BaseEdge id={id} path={edgePath} style={style} />;
+  const edgeData = data as GraphEdgeData | undefined;
+  const isSelected = edgeData?.isSelected ?? false;
+  const isActive = isHovered || isSelected;
+  const strokeColor = isActive ? "#3b82f6" : "rgba(100, 116, 139, 0.55)";
+  const strokeWidth = isActive ? 2.5 : 1.5;
+  const label = edgeData?.label;
+
+  return (
+    <g
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* invisible wide path for easier hover/click detection */}
+      <path
+        d={edgePath}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={16}
+        style={{ cursor: "pointer" }}
+      />
+      <path
+        id={id}
+        d={edgePath}
+        fill="none"
+        stroke={strokeColor}
+        strokeWidth={strokeWidth}
+        style={{
+          transition: "stroke 0.15s, stroke-width 0.15s",
+          pointerEvents: "none",
+        }}
+      />
+      {isActive && label && (
+        <>
+          <rect
+            x={midX - label.length * 4 - 8}
+            y={midY - 10}
+            width={label.length * 8 + 16}
+            height={20}
+            rx={4}
+            fill="rgba(239, 246, 255, 0.95)"
+            stroke="#3b82f6"
+            strokeWidth={1}
+            style={{ pointerEvents: "none" }}
+          />
+          <text
+            x={midX}
+            y={midY + 1}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            style={{
+              fontSize: "11px",
+              fill: "#3b82f6",
+              fontWeight: 500,
+              pointerEvents: "none",
+            }}
+          >
+            {label}
+          </text>
+        </>
+      )}
+    </g>
+  );
 }
 
 const edgeTypes = { floating: FloatingEdge };
@@ -267,6 +343,9 @@ function App() {
   const [editRole, setEditRole] = useState<ConversationRole>("user");
   const [editTopic, setEditTopic] = useState("");
   const [editContent, setEditContent] = useState("");
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [editRelationship, setEditRelationship] = useState("");
+  const [editEdgeContent, setEditEdgeContent] = useState("");
 
   const selectedNode = useMemo(
     () => conversationNodes.find((node) => node.id === selectedNodeId) ?? null,
@@ -281,14 +360,34 @@ function App() {
   const flowEdges: Edge[] = useMemo(() => {
     return conversationNodes
       .filter((n) => n.parentId)
-      .map((n) => ({
-        id: `edge-${n.parentId}-${n.id}`,
-        type: "floating",
-        source: n.parentId as string,
-        target: n.id,
-        style: { stroke: "rgba(100, 116, 139, 0.55)", strokeWidth: 1.5 },
-      }));
-  }, [conversationNodes]);
+      .map((n) => {
+        const edgeId = `edge-${n.parentId}-${n.id}`;
+        return {
+          id: edgeId,
+          type: "floating",
+          source: n.parentId as string,
+          target: n.id,
+          data: {
+            label: n.relationship ?? "",
+            isSelected: edgeId === selectedEdgeId,
+          } as GraphEdgeData,
+          style: { stroke: "rgba(100, 116, 139, 0.55)", strokeWidth: 1.5 },
+        };
+      });
+  }, [conversationNodes, selectedEdgeId]);
+
+  const selectedEdgeData = useMemo(() => {
+    if (!selectedEdgeId) return null;
+    const targetNode = conversationNodes.find(
+      (n) => n.parentId && `edge-${n.parentId}-${n.id}` === selectedEdgeId,
+    );
+    if (!targetNode) return null;
+    const sourceNode = conversationNodes.find(
+      (n) => n.id === targetNode.parentId,
+    );
+    if (!sourceNode) return null;
+    return { id: selectedEdgeId, source: sourceNode, target: targetNode };
+  }, [selectedEdgeId, conversationNodes]);
 
   // 切換專案時，重設節點選擇與 flowNodes
   useEffect(() => {
@@ -316,6 +415,13 @@ function App() {
     setEditTopic(selectedNode.topic);
     setEditContent(selectedNode.content);
   }, [selectedNode]);
+
+  useEffect(() => {
+    setTimeout(() => {
+      setEditRelationship(selectedEdgeData?.target.relationship ?? "");
+      setEditEdgeContent(selectedEdgeData?.target.edgeContent ?? "");
+    }, 0);
+  }, [selectedEdgeData]);
 
   const handleAddBranch = () => {
     if (!selectedNode) {
@@ -356,6 +462,22 @@ function App() {
     setSelectedNodeId(newNode.id);
     setNewBranchTopic("新分支");
     setNewBranchContent("");
+  };
+
+  const handleUpdateRelationship = () => {
+    if (!selectedEdgeData) return;
+    setConversationNodes((prev) =>
+      prev.map((n) =>
+        n.id === selectedEdgeData.target.id
+          ? {
+              ...n,
+              relationship: editRelationship.trim(),
+              edgeContent: editEdgeContent.trim(),
+              edgeUpdatedAt: new Date().toISOString(),
+            }
+          : n,
+      ),
+    );
   };
 
   const handleUpdateSelectedNode = () => {
@@ -532,8 +654,18 @@ function App() {
                 fitViewOptions={{ padding: 0.24 }}
                 minZoom={0.2}
                 maxZoom={1.6}
-                onNodeClick={(_event, node) => setSelectedNodeId(node.id)}
-                onPaneClick={() => setSelectedNodeId(null)}
+                onNodeClick={(_event, node) => {
+                  setSelectedNodeId(node.id);
+                  setSelectedEdgeId(null);
+                }}
+                onEdgeClick={(_event, edge) => {
+                  setSelectedEdgeId(edge.id);
+                  setSelectedNodeId(null);
+                }}
+                onPaneClick={() => {
+                  setSelectedNodeId(null);
+                  setSelectedEdgeId(null);
+                }}
                 proOptions={{ hideAttribution: true }}
               >
                 <Background
@@ -547,9 +679,53 @@ function App() {
             </section>
 
             <aside className="detail-panel">
-              <h2>節點內容</h2>
+              <h2>{selectedEdgeData ? "關係內容" : "節點內容"}</h2>
 
-              {selectedNode ? (
+              {selectedEdgeData ? (
+                <>
+                  <div className="field">
+                    <label>從</label>
+                    <div>{selectedEdgeData.source.topic}</div>
+                  </div>
+
+                  <div className="field">
+                    <label>到</label>
+                    <div>{selectedEdgeData.target.topic}</div>
+                  </div>
+
+                  <div className="field">
+                    <label>關係標籤</label>
+                    <input
+                      type="text"
+                      value={editRelationship}
+                      onChange={(e) => setEditRelationship(e.target.value)}
+                      placeholder="輸入關係描述（例：延伸、反駁、補充）..."
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>關係內容</label>
+                    <textarea
+                      value={editEdgeContent}
+                      onChange={(e) => setEditEdgeContent(e.target.value)}
+                      placeholder="輸入這條關係的詳細說明..."
+                    />
+                  </div>
+
+                  {selectedEdgeData.target.edgeUpdatedAt && (
+                    <div className="field">
+                      <label>最後更新</label>
+                      <div style={{ fontSize: "0.78rem", color: "#64748b" }}>
+                        {new Date(
+                          selectedEdgeData.target.edgeUpdatedAt,
+                        ).toLocaleString()}
+                      </div>
+                    </div>
+                  )}
+
+                  <button onClick={handleUpdateRelationship}>儲存關係</button>
+                </>
+              ) : selectedNode ? (
                 <>
                   <div className="field">
                     <label>ID</label>
@@ -636,7 +812,7 @@ function App() {
                   <button onClick={handleAddBranch}>新增分支節點</button>
                 </>
               ) : (
-                <p>請點選左側任一節點查看內容。</p>
+                <p>請點選左側任一節點或邊查看內容。</p>
               )}
             </aside>
           </main>
