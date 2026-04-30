@@ -1,5 +1,5 @@
 // ─── React 核心 Hooks ────────────────────────────────────────────────────────
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 // ─── 設定頁面元件 ──────────────────────────────────────────────────────────────
 import SettingsPage from "./SettingsPage";
 import CircleNode from "./graph/CircleNode";
@@ -259,18 +259,19 @@ function App() {
    * 修改當前專案的節點資料，並同步存回 localStorage。
    * 接受 updater 函數以支援函數式更新式。
    */
-  const setConversationNodes = (
-    updater: (prev: ConversationNode[]) => ConversationNode[],
-  ) => {
-    setProjects((prev) => {
-      const updated = {
-        ...prev,
-        [selectedProjectId]: updater(prev[selectedProjectId] || []),
-      };
-      localStorage.setItem(LOCAL_KEY, JSON.stringify(updated));
-      return updated;
-    });
-  };
+  const setConversationNodes = useCallback(
+    (updater: (prev: ConversationNode[]) => ConversationNode[]) => {
+      setProjects((prev) => {
+        const updated = {
+          ...prev,
+          [selectedProjectId]: updater(prev[selectedProjectId] || []),
+        };
+        localStorage.setItem(LOCAL_KEY, JSON.stringify(updated));
+        return updated;
+      });
+    },
+    [selectedProjectId],
+  );
 
   // ReactFlow 節點陣列：含位置資訊，底層由 ReactFlow 管理
   const [flowNodes, setFlowNodes, onNodesChange] = useNodesState<GraphFlowNode>(
@@ -464,6 +465,66 @@ function App() {
   }, [selectedEdgeData]);
 
   // ─── 事件處理函數 ────────────────────────────────────────────────────────────
+  const appendChildNode = useCallback(
+    (parentNode: ConversationNode, topic: string, content: string) => {
+      const newNode: ConversationNode = {
+        id: crypto.randomUUID(),
+        parentId: parentNode.id,
+        role: "user",
+        topic: topic.trim(),
+        content,
+        createdAt: new Date().toISOString(),
+      };
+
+      const siblingCount = conversationNodes.filter(
+        (node) => node.parentId === parentNode.id,
+      ).length;
+
+      const origin = selectedFlowNode?.position ?? { x: 0, y: 0 };
+
+      setConversationNodes((prev) => [...prev, newNode]);
+      setFlowNodes((prev) => [
+        ...prev,
+        toGraphNode(newNode, getBranchPosition(origin, siblingCount)),
+      ]);
+      setSelectedNodeId(newNode.id);
+    },
+    [conversationNodes, selectedFlowNode, setConversationNodes, setFlowNodes],
+  );
+
+  // 選到節點時，按 Tab 可快速新增子節點
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Tab" || event.repeat) return;
+      if (!selectedNode || showSettings) return;
+
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName ?? "";
+      const isTypingField =
+        target?.isContentEditable ||
+        tagName === "INPUT" ||
+        tagName === "TEXTAREA" ||
+        tagName === "SELECT" ||
+        tagName === "BUTTON";
+
+      if (isTypingField) return;
+
+      event.preventDefault();
+
+      const siblingCount =
+        conversationNodes.filter((node) => node.parentId === selectedNode.id)
+          .length + 1;
+      appendChildNode(
+        selectedNode,
+        `新分支 ${siblingCount}`,
+        "（Tab 快速新增）",
+      );
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [conversationNodes, selectedNode, showSettings, appendChildNode]);
+
   /** 新增子節點，並將其排列在父節點附近的同心圆位置 */
   const handleAddBranch = () => {
     if (!selectedNode) {
@@ -480,28 +541,7 @@ function App() {
       alert("請輸入分支內容");
       return;
     }
-
-    const newNode: ConversationNode = {
-      id: crypto.randomUUID(),
-      parentId: selectedNode.id,
-      role: "user",
-      topic: newBranchTopic.trim(),
-      content: newBranchContent,
-      createdAt: new Date().toISOString(),
-    };
-
-    const siblingCount = conversationNodes.filter(
-      (node) => node.parentId === selectedNode.id,
-    ).length;
-
-    const origin = selectedFlowNode?.position ?? { x: 0, y: 0 };
-
-    setConversationNodes((prev) => [...prev, newNode]);
-    setFlowNodes((prev) => [
-      ...prev,
-      toGraphNode(newNode, getBranchPosition(origin, siblingCount)),
-    ]);
-    setSelectedNodeId(newNode.id);
+    appendChildNode(selectedNode, newBranchTopic, newBranchContent);
     setNewBranchTopic("新分支");
     setNewBranchContent("");
   };
