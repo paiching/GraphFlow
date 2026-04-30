@@ -133,6 +133,7 @@ interface ConversationNode {
   role: ConversationRole;
   topic: string;
   content: string;
+  url?: string;
   createdAt: string;
   indegree?: number;
   outdegree?: number;
@@ -475,6 +476,7 @@ function App() {
   const [editRole, setEditRole] = useState<ConversationRole>("筆記");
   const [editTopic, setEditTopic] = useState("");
   const [editContent, setEditContent] = useState("");
+  const [editUrl, setEditUrl] = useState("");
   const [editInDegree, setEditInDegree] = useState("");
   const [editOutDegree, setEditOutDegree] = useState("");
 
@@ -516,7 +518,7 @@ function App() {
 
     if (shouldSearchNodes) {
       for (const node of conversationNodes) {
-        const haystack = [node.id, node.role, node.topic, node.content]
+        const haystack = [node.id, node.role, node.topic, node.content, node.url]
           .filter(Boolean)
           .join("\n")
           .toLowerCase();
@@ -748,6 +750,7 @@ function App() {
         setEditRole("筆記");
         setEditTopic("");
         setEditContent("");
+        setEditUrl("");
         setEditInDegree("");
         setEditOutDegree("");
         return;
@@ -756,6 +759,7 @@ function App() {
       setEditRole(selectedNode.role);
       setEditTopic(selectedNode.topic);
       setEditContent(selectedNode.content);
+      setEditUrl(selectedNode.url ?? "");
       setEditInDegree(
         selectedNode.indegree !== undefined
           ? String(selectedNode.indegree)
@@ -1078,6 +1082,20 @@ function App() {
       return;
     }
 
+    const trimmedUrl = editUrl.trim();
+    let normalizedUrl: string | undefined;
+    if (trimmedUrl) {
+      const urlWithProtocol = /^https?:\/\//i.test(trimmedUrl)
+        ? trimmedUrl
+        : `https://${trimmedUrl}`;
+      try {
+        normalizedUrl = new URL(urlWithProtocol).toString();
+      } catch {
+        alert("URL 格式不正確，請輸入有效連結");
+        return;
+      }
+    }
+
     setConversationNodes((prev) =>
       prev.map((node) =>
         node.id === selectedNode.id
@@ -1086,6 +1104,7 @@ function App() {
               role: editRole,
               topic: editTopic.trim(),
               content: editContent,
+              url: normalizedUrl,
               indegree: parsedInDegree,
               outdegree: parsedOutDegree,
             }
@@ -1519,214 +1538,260 @@ function App() {
                   </>
                 ) : selectedNode ? (
                   <>
-                    <div className="field">
-                      <label>ID</label>
-                      <div>{selectedNode.id}</div>
-                    </div>
+                    <section className="node-accordion">
+                      <details className="node-accordion__item" open>
+                        <summary>屬性</summary>
+                        <div className="node-accordion__content">
+                          <div className="field">
+                            <label>ID</label>
+                            <div>{selectedNode.id}</div>
+                          </div>
 
-                    <div className="field">
-                      <label>Parent ID</label>
-                      <div>{selectedNode.parentId ?? "Root"}</div>
-                    </div>
+                          <div className="field">
+                            <label>Parent ID</label>
+                            <div>{selectedNode.parentId ?? "Root"}</div>
+                          </div>
 
-                    <div className="field">
-                      <label>類別</label>
-                      <select
-                        value={editRole}
-                        onChange={(event) =>
-                          setEditRole(event.target.value as ConversationRole)
-                        }
-                      >
-                        <option value="筆記">筆記</option>
-                        <option value="對話">對話</option>
-                        <option value="檔案">檔案</option>
-                        <option value="圖片">圖片</option>
-                      </select>
-                    </div>
+                          <div className="field">
+                            <label>類別</label>
+                            <select
+                              value={editRole}
+                              onChange={(event) =>
+                                setEditRole(event.target.value as ConversationRole)
+                              }
+                            >
+                              <option value="筆記">筆記</option>
+                              <option value="對話">對話</option>
+                              <option value="檔案">檔案</option>
+                              <option value="圖片">圖片</option>
+                            </select>
+                          </div>
 
-                    <div className="field">
-                      <label>Topic</label>
-                      <input
-                        type="text"
-                        value={editTopic}
-                        onChange={(event) => setEditTopic(event.target.value)}
-                        placeholder="輸入主題..."
-                      />
-                    </div>
+                          <div className="field">
+                            <label>Topic</label>
+                            <input
+                              type="text"
+                              value={editTopic}
+                              onChange={(event) => setEditTopic(event.target.value)}
+                              placeholder="輸入主題..."
+                            />
+                          </div>
 
-                    <div className="field">
-                      <label>Content</label>
-                      <MarkdownEditor
-                        value={editContent}
-                        onChange={setEditContent}
-                        placeholder="輸入內容..."
-                        height={200}
-                      />
-                    </div>
+                          <div className="field">
+                            <label>Content</label>
+                            <MarkdownEditor
+                              value={editContent}
+                              onChange={setEditContent}
+                              placeholder="輸入內容..."
+                              height={200}
+                            />
+                          </div>
 
-                    <section className="node-dialogue-panel">
-                      <div className="node-dialogue-panel__header">
-                        <div className="node-dialogue-panel__title-wrap">
-                          <h3>對話紀錄</h3>
-                          <button
-                            type="button"
-                            className="node-dialogue-export-btn"
-                            onClick={handleExportNodeDialogues}
-                            disabled={selectedNodeDialogues.length === 0}
-                          >
-                            匯出對話
+                          <div className="field">
+                            <label>InDegree（可設定）</label>
+                            <input
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={editInDegree}
+                              onChange={(event) =>
+                                setEditInDegree(event.target.value)
+                              }
+                              placeholder="例如 2"
+                            />
+                          </div>
+
+                          <div className="field">
+                            <label>OutDegree（可設定）</label>
+                            <input
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={editOutDegree}
+                              onChange={(event) =>
+                                setEditOutDegree(event.target.value)
+                              }
+                              placeholder="例如 3"
+                            />
+                          </div>
+
+                          <div className="field">
+                            <label>目前連線統計</label>
+                            <div>
+                              indegree: {selectedNode.parentId ? 1 : 0}
+                              {" | "}
+                              outdegree:{" "}
+                              {
+                                conversationNodes.filter(
+                                  (n) => n.parentId === selectedNode.id,
+                                ).length
+                              }
+                            </div>
+                          </div>
+
+                          <div className="field">
+                            <label>UTC Timestamp</label>
+                            <div>
+                              {new Date(selectedNode.createdAt).toISOString()}
+                            </div>
+                          </div>
+
+                          <button onClick={handleUpdateSelectedNode}>
+                            儲存節點修改
+                          </button>
+                          <button onClick={handleDeleteSelectedNode}>
+                            刪除此節點（含子節點）
                           </button>
                         </div>
-                        <span className="node-dialogue-panel__count">
-                          {selectedNodeDialogues.length} 則
-                        </span>
-                      </div>
+                      </details>
 
-                      {selectedNodeDialogues.length === 0 ? (
-                        <p className="node-dialogue-empty">
-                          尚無對話，請在 AI 視窗按「存到 Node」。
-                        </p>
-                      ) : (
-                        <ol className="snapshot-timeline">
-                          {selectedNodeDialogues.map((dialogue) => (
-                            <li key={dialogue.id} className="snapshot-item">
-                              <div className="snapshot-item__dot node-dialogue-item__dot" />
-                              <div className="snapshot-item__content node-dialogue-item__content">
-                                <div className="snapshot-item__meta">
-                                  <span className="snapshot-item__time">
-                                    {new Date(dialogue.createdAt).toLocaleString()}
-                                  </span>
-                                  <div className="node-dialogue-item__actions">
-                                    <button
-                                      type="button"
-                                      className="node-dialogue-item__toggle"
-                                      onClick={() => setPreviewDialogue(dialogue)}
-                                    >
-                                      檢視
-                                    </button>
-                                  </div>
-                                </div>
-                                {editingDialogueId === dialogue.id ? (
-                                  <input
-                                    type="text"
-                                    className="node-dialogue-item__title-input"
-                                    value={editingDialogueTitle}
-                                    onChange={(event) =>
-                                      setEditingDialogueTitle(event.target.value)
-                                    }
-                                    onBlur={handleCommitEditingDialogueTitle}
-                                    onKeyDown={(event) => {
-                                      if (event.key === "Enter") {
-                                        handleCommitEditingDialogueTitle();
-                                      }
-                                      if (event.key === "Escape") {
-                                        setEditingDialogueId(null);
-                                        setEditingDialogueTitle("");
-                                      }
-                                    }}
-                                    autoFocus
-                                  />
-                                ) : (
-                                  <div
-                                    className="node-dialogue-item__title"
-                                    onDoubleClick={() =>
-                                      handleStartEditingDialogueTitle(dialogue)
-                                    }
-                                    title="雙擊可編輯標題"
-                                  >
-                                    {getDialogueDisplayTitle(dialogue)}
-                                  </div>
-                                )}
+                      <details className="node-accordion__item">
+                        <summary>對話紀錄</summary>
+                        <div className="node-accordion__content">
+                          <section className="node-dialogue-panel">
+                            <div className="node-dialogue-panel__header">
+                              <div className="node-dialogue-panel__title-wrap">
+                                <h3>對話紀錄</h3>
+                                <button
+                                  type="button"
+                                  className="node-dialogue-export-btn"
+                                  onClick={handleExportNodeDialogues}
+                                  disabled={selectedNodeDialogues.length === 0}
+                                >
+                                  匯出對話
+                                </button>
                               </div>
-                            </li>
-                          ))}
-                        </ol>
-                      )}
+                              <span className="node-dialogue-panel__count">
+                                {selectedNodeDialogues.length} 則
+                              </span>
+                            </div>
+
+                            {selectedNodeDialogues.length === 0 ? (
+                              <p className="node-dialogue-empty">
+                                尚無對話，請在 AI 視窗按「存到 Node」。
+                              </p>
+                            ) : (
+                              <ol className="snapshot-timeline">
+                                {selectedNodeDialogues.map((dialogue) => (
+                                  <li key={dialogue.id} className="snapshot-item">
+                                    <div className="snapshot-item__dot node-dialogue-item__dot" />
+                                    <div className="snapshot-item__content node-dialogue-item__content">
+                                      <div className="snapshot-item__meta">
+                                        <span className="snapshot-item__time">
+                                          {new Date(dialogue.createdAt).toLocaleString()}
+                                        </span>
+                                        <div className="node-dialogue-item__actions">
+                                          <button
+                                            type="button"
+                                            className="node-dialogue-item__toggle"
+                                            onClick={() => setPreviewDialogue(dialogue)}
+                                          >
+                                            檢視
+                                          </button>
+                                        </div>
+                                      </div>
+                                      {editingDialogueId === dialogue.id ? (
+                                        <input
+                                          type="text"
+                                          className="node-dialogue-item__title-input"
+                                          value={editingDialogueTitle}
+                                          onChange={(event) =>
+                                            setEditingDialogueTitle(event.target.value)
+                                          }
+                                          onBlur={handleCommitEditingDialogueTitle}
+                                          onKeyDown={(event) => {
+                                            if (event.key === "Enter") {
+                                              handleCommitEditingDialogueTitle();
+                                            }
+                                            if (event.key === "Escape") {
+                                              setEditingDialogueId(null);
+                                              setEditingDialogueTitle("");
+                                            }
+                                          }}
+                                          autoFocus
+                                        />
+                                      ) : (
+                                        <div
+                                          className="node-dialogue-item__title"
+                                          onDoubleClick={() =>
+                                            handleStartEditingDialogueTitle(dialogue)
+                                          }
+                                          title="雙擊可編輯標題"
+                                        >
+                                          {getDialogueDisplayTitle(dialogue)}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </li>
+                                ))}
+                              </ol>
+                            )}
+                          </section>
+                        </div>
+                      </details>
+
+                      <details className="node-accordion__item">
+                        <summary>URL</summary>
+                        <div className="node-accordion__content">
+                          <div className="field">
+                            <label>URL 連結</label>
+                            <input
+                              type="url"
+                              value={editUrl}
+                              onChange={(event) => setEditUrl(event.target.value)}
+                              placeholder="https://example.com"
+                            />
+                            {selectedNode.url && (
+                              <a
+                                href={selectedNode.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                  marginTop: "6px",
+                                  fontSize: "0.86rem",
+                                  color: "#0369a1",
+                                  wordBreak: "break-all",
+                                }}
+                              >
+                                {selectedNode.url}
+                              </a>
+                            )}
+                          </div>
+                          <button onClick={handleUpdateSelectedNode}>儲存 URL</button>
+                        </div>
+                      </details>
+
+                      <details className="node-accordion__item">
+                        <summary>分支</summary>
+                        <div className="node-accordion__content">
+                          <h3>從此節點新增分支</h3>
+
+                          <div className="field">
+                            <label>分支主題</label>
+                            <input
+                              type="text"
+                              value={newBranchTopic}
+                              onChange={(event) =>
+                                setNewBranchTopic(event.target.value)
+                              }
+                              placeholder="輸入新的分支主題..."
+                            />
+                          </div>
+
+                          <div className="field">
+                            <label>分支內容</label>
+                            <MarkdownEditor
+                              value={newBranchContent}
+                              onChange={setNewBranchContent}
+                              placeholder="輸入新的分支內容..."
+                              height={160}
+                            />
+                          </div>
+
+                          <button onClick={handleAddBranch}>新增分支節點</button>
+                        </div>
+                      </details>
                     </section>
-
-                    <div className="field">
-                      <label>InDegree（可設定）</label>
-                      <input
-                        type="number"
-                        min={0}
-                        step={1}
-                        value={editInDegree}
-                        onChange={(event) =>
-                          setEditInDegree(event.target.value)
-                        }
-                        placeholder="例如 2"
-                      />
-                    </div>
-
-                    <div className="field">
-                      <label>OutDegree（可設定）</label>
-                      <input
-                        type="number"
-                        min={0}
-                        step={1}
-                        value={editOutDegree}
-                        onChange={(event) =>
-                          setEditOutDegree(event.target.value)
-                        }
-                        placeholder="例如 3"
-                      />
-                    </div>
-
-                    <div className="field">
-                      <label>目前連線統計</label>
-                      <div>
-                        indegree: {selectedNode.parentId ? 1 : 0}
-                        {" | "}
-                        outdegree:{" "}
-                        {
-                          conversationNodes.filter(
-                            (n) => n.parentId === selectedNode.id,
-                          ).length
-                        }
-                      </div>
-                    </div>
-
-                    <div className="field">
-                      <label>UTC Timestamp</label>
-                      <div>
-                        {new Date(selectedNode.createdAt).toISOString()}
-                      </div>
-                    </div>
-
-                    <button onClick={handleUpdateSelectedNode}>
-                      儲存節點修改
-                    </button>
-                    <button onClick={handleDeleteSelectedNode}>
-                      刪除此節點（含子節點）
-                    </button>
-
-                    <hr />
-
-                    <h3>從此節點新增分支</h3>
-
-                    <div className="field">
-                      <label>分支主題</label>
-                      <input
-                        type="text"
-                        value={newBranchTopic}
-                        onChange={(event) =>
-                          setNewBranchTopic(event.target.value)
-                        }
-                        placeholder="輸入新的分支主題..."
-                      />
-                    </div>
-
-                    <div className="field">
-                      <label>分支內容</label>
-                      <MarkdownEditor
-                        value={newBranchContent}
-                        onChange={setNewBranchContent}
-                        placeholder="輸入新的分支內容..."
-                        height={160}
-                      />
-                    </div>
-
-                    <button onClick={handleAddBranch}>新增分支節點</button>
                   </>
                 ) : (
                   <p>請點選左側任一節點或邊查看內容。</p>

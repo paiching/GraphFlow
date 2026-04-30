@@ -1100,6 +1100,48 @@ button:hover {
   background: rgba(255, 255, 255, 0.72);
 }
 
+.node-accordion {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.node-accordion__item {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.82);
+  overflow: hidden;
+}
+
+.node-accordion__item > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 10px 12px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #334155;
+  background: rgba(241, 245, 249, 0.75);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.node-accordion__item > summary::-webkit-details-marker {
+  display: none;
+}
+
+.node-accordion__item > summary::after {
+  content: "▾";
+  float: right;
+  color: #64748b;
+}
+
+.node-accordion__item[open] > summary::after {
+  content: "▴";
+}
+
+.node-accordion__content {
+  padding: 10px;
+}
+
 .node-dialogue-panel__header {
   display: flex;
   align-items: center;
