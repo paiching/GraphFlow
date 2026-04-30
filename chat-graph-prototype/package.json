@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "predev": "node -e \"try{require('node:fs').rmSync('node_modules/.vite',{recursive:true,force:true})}catch(e){}\"",
+    "dev": "vite --force",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -12,7 +13,9 @@
   "dependencies": {
     "@xyflow/react": "^12.10.2",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

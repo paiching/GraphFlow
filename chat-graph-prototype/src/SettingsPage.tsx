@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 type ConversationRole = "user" | "assistant" | "system";
 interface ConversationNode {
@@ -16,6 +16,8 @@ interface SettingsPageProps {
   onBack: () => void;
   nodeSize: number;
   setNodeSize: (size: number) => void;
+  openAIApiKey: string;
+  onSaveOpenAIApiKey: (key: string) => void;
 }
 
 const LOCAL_KEY = "conversation-projects";
@@ -27,8 +29,15 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
   onBack,
   nodeSize,
   setNodeSize,
+  openAIApiKey,
+  onSaveOpenAIApiKey,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [apiKeyInput, setApiKeyInput] = useState(openAIApiKey);
+
+  useEffect(() => {
+    setApiKeyInput(openAIApiKey);
+  }, [openAIApiKey]);
 
   // 匯出 JSON
   const handleExport = () => {
@@ -65,6 +74,11 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
       }
     };
     reader.readAsText(file);
+  };
+
+  const handleSaveApiKey = () => {
+    onSaveOpenAIApiKey(apiKeyInput.trim());
+    alert("OpenAI API Key 已儲存");
   };
 
   return (
@@ -189,6 +203,30 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
           >
             重設為預設大小
           </button>
+        </div>
+
+        <div className="settings-section">
+          <div className="settings-section-title">AI 連線設定</div>
+          <div className="settings-field">
+            <label className="settings-field-label" htmlFor="openai-api-key">
+              OpenAI API Key
+            </label>
+            <input
+              id="openai-api-key"
+              type="password"
+              value={apiKeyInput}
+              onChange={(e) => setApiKeyInput(e.target.value)}
+              placeholder="sk-..."
+              autoComplete="off"
+              className="settings-text-input"
+            />
+          </div>
+          <button className="settings-btn export" onClick={handleSaveApiKey}>
+            儲存 API Key
+          </button>
+          <p className="settings-hint">
+            Key 只會存到你本機瀏覽器 localStorage，重新整理後仍可使用。
+          </p>
         </div>
 
         <button className="settings-btn back" onClick={onBack}>

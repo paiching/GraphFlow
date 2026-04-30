@@ -5,6 +5,7 @@ import SettingsPage from "./SettingsPage";
 import CircleNode from "./graph/CircleNode";
 import FloatingEdge from "./graph/FloatingEdge";
 import GraphSearchBar from "./graph/GraphSearchBar";
+import MarkdownEditor from "./components/MarkdownEditor";
 import {
   DEFAULT_NODE_SIZE,
   NODE_SIZE_KEY,
@@ -21,6 +22,8 @@ import {
   useNodesState,
 } from "@xyflow/react";
 import type { Edge } from "@xyflow/react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import "@xyflow/react/dist/style.css";
 import "./App.css";
 
@@ -28,6 +31,25 @@ import "./App.css";
 
 /** 節點角色：使用者、AI 助理、或系統 */
 type ConversationRole = "user" | "assistant" | "system";
+
+interface NodeDialogueEntry {
+  id: string;
+  sourceMessageId: string;
+  content: string;
+  createdAt: string;
+}
+
+function getDialogueTitle(content: string) {
+  const normalized = content
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+
+  if (!normalized) return "AI 回覆";
+
+  const heading = normalized.replace(/^#{1,6}\s+/, "");
+  return heading.length > 48 ? `${heading.slice(0, 48)}...` : heading;
+}
 
 /** 對話節點的資料結構，儲存在 projects 狀態裡 */
 interface ConversationNode {
@@ -42,6 +64,7 @@ interface ConversationNode {
   relationship?: string;
   edgeContent?: string;
   edgeUpdatedAt?: string;
+  dialogues?: NodeDialogueEntry[];
 }
 
 // ─── 初始資料 ────────────────────────────────────────────────────────────────
@@ -108,6 +131,12 @@ interface ProjectSnapshot {
   createdAt: string;
   nodes: ConversationNode[];
   positions: PositionByNodeId;
+}
+
+interface AIChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
 }
 
 type SnapshotsByProjectId = Record<string, ProjectSnapshot[]>;
@@ -199,6 +228,8 @@ const POSITIONS_KEY = "conversation-node-positions";
 const SNAPSHOTS_KEY = "conversation-project-snapshots";
 /** snapshot 播放間隔（毫秒）設定 key */
 const SNAPSHOT_PLAYBACK_INTERVAL_KEY = "snapshot-playback-interval-ms";
+/** OpenAI API Key 存放 key */
+const OPENAI_API_KEY_STORAGE_KEY = "openai-api-key";
 
 /**
  * 將已存 localStorage 的位置套用到節點初始位置上。
@@ -221,6 +252,19 @@ function applySavedPositions(
 function App() {
   // 是否顯示設定頁面
   const [showSettings, setShowSettings] = useState(false);
+  const [isAiChatOpen, setIsAiChatOpen] = useState(false);
+  const [chatInput, setChatInput] = useState("");
+  const [chatMessages, setChatMessages] = useState<AIChatMessage[]>([]);
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [chatSaveTargetNodeId, setChatSaveTargetNodeId] = useState("");
+  const [chatActionNotice, setChatActionNotice] = useState<string | null>(null);
+  const [expandedDialogueId, setExpandedDialogueId] = useState<string | null>(
+    null,
+  );
+  const [openAIApiKey, setOpenAIApiKey] = useState(() =>
+    localStorage.getItem(OPENAI_API_KEY_STORAGE_KEY) ?? "",
+  );
 
   // 節點大小：從 localStorage 初始化，變更時同步存回 localStorage
   const [nodeSize, setNodeSize] = useState<number>(() => {
@@ -233,6 +277,14 @@ function App() {
   useEffect(() => {
     localStorage.setItem(NODE_SIZE_KEY, String(nodeSize));
   }, [nodeSize]);
+
+  useEffect(() => {
+    if (openAIApiKey.trim()) {
+      localStorage.setItem(OPENAI_API_KEY_STORAGE_KEY, openAIApiKey.trim());
+      return;
+    }
+    localStorage.removeItem(OPENAI_API_KEY_STORAGE_KEY);
+  }, [openAIApiKey]);
   // 專案資料：結構為 { [projectId]: ConversationNode[] }，從 localStorage 初始化
   const [projects, setProjects] = useState<Record<string, ConversationNode[]>>(
     () => {
@@ -420,6 +472,11 @@ function App() {
   const selectedNode = useMemo(
     () => conversationNodes.find((node) => node.id === selectedNodeId) ?? null,
     [conversationNodes, selectedNodeId],
+  );
+
+  const selectedNodeDialogues = useMemo(
+    () => [...(selectedNode?.dialogues ?? [])].reverse(),
+    [selectedNode],
   );
 
   // 目前選中節點的 ReactFlow 渲染資訊（位置等）
@@ -613,6 +670,26 @@ function App() {
 
     return () => clearTimeout(timer);
   }, [selectedNode]);
+
+  useEffect(() => {
+    if (selectedNodeId) {
+      setChatSaveTargetNodeId(selectedNodeId);
+      setExpandedDialogueId(null);
+      return;
+    }
+
+    const hasCurrentTarget = conversationNodes.some(
+      (node) => node.id === chatSaveTargetNodeId,
+    );
+
+    if ((!chatSaveTargetNodeId || !hasCurrentTarget) && conversationNodes.length > 0) {
+      setChatSaveTargetNodeId(conversationNodes[0].id);
+    }
+
+    if (conversationNodes.length === 0 && chatSaveTargetNodeId) {
+      setChatSaveTargetNodeId("");
+    }
+  }, [selectedNodeId, chatSaveTargetNodeId, conversationNodes]);
 
   // 邊線選取變動時，將關係標籤 / 關係內容填充到右側面板表單
   useEffect(() => {
@@ -936,6 +1013,151 @@ function App() {
     deleteNodeTree(selectedNode.id);
   };
 
+  const handleSaveOpenAIApiKey = useCallback((key: string) => {
+    setOpenAIApiKey(key);
+  }, []);
+
+  const handleSendChat = useCallback(async () => {
+    const trimmedInput = chatInput.trim();
+    if (!trimmedInput || isChatLoading) return;
+
+    if (!openAIApiKey.trim()) {
+      setChatError("尚未設定 OpenAI API Key，請先到設定頁新增。");
+      setShowSettings(true);
+      return;
+    }
+
+    const userMessage: AIChatMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: trimmedInput,
+    };
+
+    const messagesForApi = [...chatMessages, userMessage].map((message) => ({
+      role: message.role,
+      content: message.content,
+    }));
+
+    setChatMessages((prev) => [...prev, userMessage]);
+    setChatInput("");
+    setIsChatLoading(true);
+    setChatError(null);
+
+    try {
+      const response = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${openAIApiKey.trim()}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4.1-mini",
+          input: messagesForApi,
+        }),
+      });
+
+      const payload = (await response.json()) as {
+        output_text?: string;
+        output?: Array<{
+          content?: Array<{ type?: string; text?: string }>;
+        }>;
+        error?: { message?: string };
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error?.message ?? "OpenAI 請求失敗");
+      }
+
+      const outputFromChunks = (payload.output ?? [])
+        .flatMap((item) => item.content ?? [])
+        .filter((item) => item.type === "output_text" && item.text)
+        .map((item) => item.text ?? "")
+        .join("\n")
+        .trim();
+
+      const assistantText =
+        payload.output_text?.trim() || outputFromChunks || "目前沒有回覆內容。";
+
+      const assistantMessage: AIChatMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: assistantText,
+      };
+
+      setChatMessages((prev) => [...prev, assistantMessage]);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "發生未知錯誤，請稍後再試";
+      setChatError(message);
+    } finally {
+      setIsChatLoading(false);
+    }
+  }, [chatInput, chatMessages, isChatLoading, openAIApiKey]);
+
+  const handleCopyAssistantMessage = useCallback(async (content: string) => {
+    const text = content.trim();
+    if (!text) return;
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textArea);
+      }
+
+      setChatActionNotice("已複製 AI 回覆內容");
+    } catch {
+      setChatActionNotice("複製失敗，請稍後再試");
+    }
+  }, []);
+
+  const handleSaveAssistantMessageToNode = useCallback(
+    (message: AIChatMessage) => {
+      if (message.role !== "assistant") return;
+
+      const targetNode = conversationNodes.find(
+        (node) => node.id === chatSaveTargetNodeId,
+      );
+
+      if (!targetNode) {
+        setChatActionNotice("請先選擇要儲存的 Node");
+        return;
+      }
+
+      const savedAt = new Date().toISOString();
+      const newDialogue: NodeDialogueEntry = {
+        id: crypto.randomUUID(),
+        sourceMessageId: message.id,
+        content: message.content.trim(),
+        createdAt: savedAt,
+      };
+
+      setConversationNodes((prev) =>
+        prev.map((node) =>
+          node.id === targetNode.id
+            ? {
+                ...node,
+                dialogues: [...(node.dialogues ?? []), newDialogue],
+              }
+            : node,
+        ),
+      );
+
+      setSelectedNodeId(targetNode.id);
+      setSelectedEdgeId(null);
+      setChatActionNotice(`已存到對話：${targetNode.topic}`);
+    },
+    [chatSaveTargetNodeId, conversationNodes, setConversationNodes],
+  );
+
   // ─── 渲染 ────────────────────────────────────────────────────────────────
   // NodeSizeContext.Provider 將 nodeSize 屬數往下傳給 CircleNode 與 FloatingEdge
   return (
@@ -950,6 +1172,8 @@ function App() {
             onBack={() => setShowSettings(false)}
             nodeSize={nodeSize}
             setNodeSize={setNodeSize}
+            openAIApiKey={openAIApiKey}
+            onSaveOpenAIApiKey={handleSaveOpenAIApiKey}
           />
         ) : (
           <>
@@ -957,6 +1181,14 @@ function App() {
               <h1>Conversation Graph Prototype</h1>
               <p>線性對話 → 主題節點圖 → 可分支脈絡</p>
               <div className="project-switcher">
+                <GraphSearchBar
+                  query={searchKeywordInput}
+                  scope={searchScopeInput}
+                  resultCount={searchResultCount}
+                  onQueryChange={setSearchKeywordInput}
+                  onScopeChange={setSearchScopeInput}
+                  onSearch={handleSearch}
+                />
                 <label htmlFor="project-select">切換專案：</label>
                 <select
                   id="project-select"
@@ -969,6 +1201,14 @@ function App() {
                     </option>
                   ))}
                 </select>
+                <button
+                  className="ai-chat-toggle-btn"
+                  title="AI 對話"
+                  onClick={() => setIsAiChatOpen((prev) => !prev)}
+                  aria-label="AI 對話"
+                >
+                  {isAiChatOpen ? "關閉 AI" : "AI 對話"}
+                </button>
                 <button
                   className="settings-gear-btn"
                   title="設定"
@@ -998,16 +1238,6 @@ function App() {
                     />
                   </svg>
                 </button>
-              </div>
-              <div className="header-tools">
-                <GraphSearchBar
-                  query={searchKeywordInput}
-                  scope={searchScopeInput}
-                  resultCount={searchResultCount}
-                  onQueryChange={setSearchKeywordInput}
-                  onScopeChange={setSearchScopeInput}
-                  onSearch={handleSearch}
-                />
               </div>
             </header>
 
@@ -1078,10 +1308,11 @@ function App() {
 
                     <div className="field">
                       <label>關係內容</label>
-                      <textarea
+                      <MarkdownEditor
                         value={editEdgeContent}
-                        onChange={(e) => setEditEdgeContent(e.target.value)}
+                        onChange={setEditEdgeContent}
                         placeholder="輸入這條關係的詳細說明..."
+                        height={160}
                       />
                     </div>
 
@@ -1136,12 +1367,66 @@ function App() {
 
                     <div className="field">
                       <label>Content</label>
-                      <textarea
+                      <MarkdownEditor
                         value={editContent}
-                        onChange={(event) => setEditContent(event.target.value)}
+                        onChange={setEditContent}
                         placeholder="輸入內容..."
+                        height={200}
                       />
                     </div>
+
+                    <section className="node-dialogue-panel">
+                      <div className="node-dialogue-panel__header">
+                        <h3>對話紀錄</h3>
+                        <span className="node-dialogue-panel__count">
+                          {selectedNodeDialogues.length} 則
+                        </span>
+                      </div>
+
+                      {selectedNodeDialogues.length === 0 ? (
+                        <p className="node-dialogue-empty">
+                          尚無對話，請在 AI 視窗按「存到 Node」。
+                        </p>
+                      ) : (
+                        <ol className="snapshot-timeline">
+                          {selectedNodeDialogues.map((dialogue) => (
+                            <li key={dialogue.id} className="snapshot-item">
+                              <div className="snapshot-item__dot node-dialogue-item__dot" />
+                              <div className="snapshot-item__content node-dialogue-item__content">
+                                <div className="snapshot-item__meta">
+                                  <span className="snapshot-item__time">
+                                    {new Date(dialogue.createdAt).toLocaleString()}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="node-dialogue-item__toggle"
+                                    onClick={() =>
+                                      setExpandedDialogueId((prev) =>
+                                        prev === dialogue.id ? null : dialogue.id,
+                                      )
+                                    }
+                                  >
+                                    {expandedDialogueId === dialogue.id
+                                      ? "收合"
+                                      : "展開"}
+                                  </button>
+                                </div>
+                                <div className="node-dialogue-item__title">
+                                  {getDialogueTitle(dialogue.content)}
+                                </div>
+                                {expandedDialogueId === dialogue.id && (
+                                  <div className="node-dialogue-item__text">
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                      {dialogue.content}
+                                    </ReactMarkdown>
+                                  </div>
+                                )}
+                              </div>
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+                    </section>
 
                     <div className="field">
                       <label>InDegree（可設定）</label>
@@ -1217,12 +1502,11 @@ function App() {
 
                     <div className="field">
                       <label>分支內容</label>
-                      <textarea
+                      <MarkdownEditor
                         value={newBranchContent}
-                        onChange={(event) =>
-                          setNewBranchContent(event.target.value)
-                        }
+                        onChange={setNewBranchContent}
                         placeholder="輸入新的分支內容..."
+                        height={160}
                       />
                     </div>
 
@@ -1316,6 +1600,132 @@ function App() {
                 </section>
               </aside>
             </main>
+
+            {isAiChatOpen && (
+              <section className="ai-chat-drawer" aria-label="AI 聊天視窗">
+                <div className="ai-chat-drawer__header">
+                  <h3>OpenAI 對話</h3>
+                  <button
+                    type="button"
+                    className="ai-chat-close-btn"
+                    onClick={() => setIsAiChatOpen(false)}
+                  >
+                    關閉
+                  </button>
+                </div>
+
+                <div className="ai-chat-save-target">
+                  <label htmlFor="chat-save-target-select">儲存到 Node</label>
+                  <select
+                    id="chat-save-target-select"
+                    value={chatSaveTargetNodeId}
+                    onChange={(event) =>
+                      setChatSaveTargetNodeId(event.target.value)
+                    }
+                  >
+                    {conversationNodes.map((node) => (
+                      <option key={node.id} value={node.id}>
+                        {node.topic}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="ai-chat-messages">
+                  {chatMessages.length === 0 ? (
+                    <p className="ai-chat-empty">
+                      開始輸入訊息，這裡會顯示你和 AI 的對話。
+                    </p>
+                  ) : (
+                    chatMessages.map((message) => (
+                      <div
+                        key={message.id}
+                        className={`ai-chat-message ai-chat-message--${message.role}`}
+                      >
+                        <div className="ai-chat-message__role">
+                          {message.role === "user" ? "你" : "AI"}
+                        </div>
+
+                        {message.role === "assistant" ? (
+                          <>
+                            <div className="ai-chat-message__content ai-chat-message__content--markdown">
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {message.content}
+                              </ReactMarkdown>
+                            </div>
+                            <div className="ai-chat-message__actions">
+                              <button
+                                type="button"
+                                className="ai-chat-message__action-btn"
+                                onClick={() =>
+                                  void handleCopyAssistantMessage(message.content)
+                                }
+                              >
+                                複製
+                              </button>
+                              <button
+                                type="button"
+                                className="ai-chat-message__action-btn"
+                                onClick={() =>
+                                  handleSaveAssistantMessageToNode(message)
+                                }
+                                disabled={!conversationNodes.length}
+                              >
+                                存到 Node
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="ai-chat-message__content">
+                            {message.content}
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+
+                  {isChatLoading && (
+                    <p className="ai-chat-loading">AI 回覆中...</p>
+                  )}
+                </div>
+
+                {chatError && <p className="ai-chat-error">{chatError}</p>}
+
+                <div className="ai-chat-input-wrap">
+                  <textarea
+                    className="ai-chat-input"
+                    value={chatInput}
+                    onChange={(event) => setChatInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        void handleSendChat();
+                      }
+                    }}
+                    placeholder="輸入訊息，按 Enter 送出（Shift+Enter 換行）"
+                  />
+                  <button
+                    type="button"
+                    className="ai-chat-send-btn"
+                    onClick={() => void handleSendChat()}
+                    disabled={isChatLoading || !chatInput.trim()}
+                  >
+                    送出
+                  </button>
+                </div>
+
+                <p className="ai-chat-status">
+                  {openAIApiKey.trim()
+                    ? "已連線：使用本機儲存的 OpenAI API Key"
+                    : "尚未設定 API Key，請到設定頁新增"}
+                </p>
+                {chatActionNotice && (
+                  <p className="ai-chat-status ai-chat-status--notice">
+                    {chatActionNotice}
+                  </p>
+                )}
+              </section>
+            )}
           </>
         )}
       </div>
