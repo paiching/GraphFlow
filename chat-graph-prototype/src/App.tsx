@@ -492,10 +492,36 @@ function App() {
     [conversationNodes, selectedFlowNode, setConversationNodes, setFlowNodes],
   );
 
+  const deleteNodeTree = useCallback(
+    (rootNodeId: string) => {
+      const idsToDelete = new Set<string>();
+      const stack = [rootNodeId];
+
+      while (stack.length > 0) {
+        const currentId = stack.pop();
+        if (!currentId || idsToDelete.has(currentId)) continue;
+
+        idsToDelete.add(currentId);
+
+        for (const node of conversationNodes) {
+          if (node.parentId === currentId) stack.push(node.id);
+        }
+      }
+
+      setConversationNodes((prev) =>
+        prev.filter((node) => !idsToDelete.has(node.id)),
+      );
+      setFlowNodes((prev) => prev.filter((node) => !idsToDelete.has(node.id)));
+      setSelectedNodeId(null);
+      setSelectedEdgeId(null);
+    },
+    [conversationNodes, setConversationNodes, setFlowNodes],
+  );
+
   // 選到節點時，按 Tab 可快速新增子節點
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Tab" || event.repeat) return;
+      if (event.repeat) return;
       if (!selectedNode || showSettings) return;
 
       const target = event.target as HTMLElement | null;
@@ -509,7 +535,16 @@ function App() {
 
       if (isTypingField) return;
 
+      const isCreateKey = event.key === "Tab";
+      const isDeleteKey = event.key === "Delete" || event.key === "Backspace";
+      if (!isCreateKey && !isDeleteKey) return;
+
       event.preventDefault();
+
+      if (isDeleteKey) {
+        deleteNodeTree(selectedNode.id);
+        return;
+      }
 
       const siblingCount =
         conversationNodes.filter((node) => node.parentId === selectedNode.id)
@@ -523,7 +558,13 @@ function App() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [conversationNodes, selectedNode, showSettings, appendChildNode]);
+  }, [
+    conversationNodes,
+    selectedNode,
+    showSettings,
+    appendChildNode,
+    deleteNodeTree,
+  ]);
 
   /** 新增子節點，並將其排列在父節點附近的同心圆位置 */
   const handleAddBranch = () => {
@@ -632,26 +673,7 @@ function App() {
   /** 刪除選中節點以及所有子孙節點（深度優先遍歷） */
   const handleDeleteSelectedNode = () => {
     if (!selectedNode) return;
-
-    const idsToDelete = new Set<string>();
-    const stack = [selectedNode.id];
-
-    while (stack.length > 0) {
-      const currentId = stack.pop();
-      if (!currentId || idsToDelete.has(currentId)) continue;
-
-      idsToDelete.add(currentId);
-
-      for (const node of conversationNodes) {
-        if (node.parentId === currentId) stack.push(node.id);
-      }
-    }
-
-    setConversationNodes((prev) =>
-      prev.filter((node) => !idsToDelete.has(node.id)),
-    );
-    setFlowNodes((prev) => prev.filter((node) => !idsToDelete.has(node.id)));
-    setSelectedNodeId(null);
+    deleteNodeTree(selectedNode.id);
   };
 
   // ─── 渲染 ────────────────────────────────────────────────────────────────
