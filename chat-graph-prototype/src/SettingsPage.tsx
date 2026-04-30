@@ -14,6 +14,8 @@ interface SettingsPageProps {
   setProjects: (projects: Record<string, ConversationNode[]>) => void;
   setSelectedProjectId: (id: string) => void;
   onBack: () => void;
+  nodeSize: number;
+  setNodeSize: (size: number) => void;
 }
 
 const LOCAL_KEY = "conversation-projects";
@@ -23,6 +25,8 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
   setProjects,
   setSelectedProjectId,
   onBack,
+  nodeSize,
+  setNodeSize,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -156,6 +160,36 @@ const SettingsPage: React.FC<SettingsPageProps> = ({
         <p className="settings-hint">
           匯入後將覆蓋現有所有專案資料，並自動儲存於 localStorage。
         </p>
+
+        <div className="settings-section">
+          <div className="settings-section-title">外觀設定</div>
+          <div className="settings-field">
+            <label className="settings-field-label">
+              節點大小
+              <span className="settings-field-value">{nodeSize}px</span>
+            </label>
+            <input
+              type="range"
+              min={60}
+              max={220}
+              step={4}
+              value={nodeSize}
+              onChange={(e) => setNodeSize(Number(e.target.value))}
+              className="settings-slider"
+            />
+            <div className="settings-slider-labels">
+              <span>小</span>
+              <span>預設 (148px)</span>
+              <span>大</span>
+            </div>
+          </div>
+          <button
+            className="settings-btn reset-size"
+            onClick={() => setNodeSize(148)}
+          >
+            重設為預設大小
+          </button>
+        </div>
 
         <button className="settings-btn back" onClick={onBack}>
           <svg

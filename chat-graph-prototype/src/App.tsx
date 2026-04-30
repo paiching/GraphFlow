@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  useRef,
+  createContext,
+  useContext,
+} from "react";
 import SettingsPage from "./SettingsPage";
 import {
   ReactFlow,
@@ -40,6 +47,10 @@ interface GraphEdgeData extends Record<string, unknown> {
 }
 
 type GraphFlowNode = Node<GraphNodeData, "circle">;
+
+const NODE_SIZE_KEY = "graph-node-size";
+const DEFAULT_NODE_SIZE = 148;
+const NodeSizeContext = createContext(DEFAULT_NODE_SIZE);
 
 // 多專案資料結構
 const initialProjects: Record<string, ConversationNode[]> = {
@@ -91,6 +102,8 @@ const initialProjects: Record<string, ConversationNode[]> = {
 };
 
 function CircleNode({ data, selected }: NodeProps<GraphFlowNode>) {
+  const nodeSize = useContext(NodeSizeContext);
+  const scale = nodeSize / DEFAULT_NODE_SIZE;
   return (
     <>
       <Handle
@@ -106,9 +119,24 @@ function CircleNode({ data, selected }: NodeProps<GraphFlowNode>) {
         ]
           .filter(Boolean)
           .join(" ")}
+        style={{
+          width: nodeSize,
+          height: nodeSize,
+          padding: Math.round(20 * scale),
+        }}
       >
-        <span className="graph-node__role">{data.role}</span>
-        <strong className="graph-node__title">{data.topic}</strong>
+        <span
+          className="graph-node__role"
+          style={{ fontSize: Math.round(11 * scale) }}
+        >
+          {data.role}
+        </span>
+        <strong
+          className="graph-node__title"
+          style={{ fontSize: Math.round(16 * scale) }}
+        >
+          {data.topic}
+        </strong>
       </div>
       <Handle
         className="graph-node__handle"
@@ -123,6 +151,7 @@ const nodeTypes = { circle: CircleNode };
 
 function FloatingEdge({ id, source, target, data }: EdgeProps) {
   const [isHovered, setIsHovered] = useState(false);
+  const nodeSize = useContext(NodeSizeContext);
   const sourceNode = useStore((s) => s.nodeLookup.get(source));
   const targetNode = useStore((s) => s.nodeLookup.get(target));
 
@@ -130,10 +159,10 @@ function FloatingEdge({ id, source, target, data }: EdgeProps) {
 
   const sPos = sourceNode.internals.positionAbsolute;
   const tPos = targetNode.internals.positionAbsolute;
-  const sW = sourceNode.measured?.width ?? 148;
-  const sH = sourceNode.measured?.height ?? 148;
-  const tW = targetNode.measured?.width ?? 148;
-  const tH = targetNode.measured?.height ?? 148;
+  const sW = sourceNode.measured?.width ?? nodeSize;
+  const sH = sourceNode.measured?.height ?? nodeSize;
+  const tW = targetNode.measured?.width ?? nodeSize;
+  const tH = targetNode.measured?.height ?? nodeSize;
 
   const scx = sPos.x + sW / 2;
   const scy = sPos.y + sH / 2;
@@ -298,6 +327,16 @@ function App() {
 
   // 設定頁面顯示狀態
   const [showSettings, setShowSettings] = useState(false);
+  // Node 大小設定
+  const [nodeSize, setNodeSize] = useState<number>(() => {
+    const raw = localStorage.getItem(NODE_SIZE_KEY);
+    const n = raw ? parseInt(raw, 10) : DEFAULT_NODE_SIZE;
+    return isNaN(n) ? DEFAULT_NODE_SIZE : n;
+  });
+
+  useEffect(() => {
+    localStorage.setItem(NODE_SIZE_KEY, String(nodeSize));
+  }, [nodeSize]);
   // 專案資料狀態
   const [projects, setProjects] = useState<Record<string, ConversationNode[]>>(
     () => {
@@ -584,241 +623,247 @@ function App() {
   };
 
   return (
-    <div className="app-container">
-      {showSettings ? (
-        <SettingsPage
-          projects={projects}
-          setProjects={setProjects}
-          setSelectedProjectId={setSelectedProjectId}
-          onBack={() => setShowSettings(false)}
-        />
-      ) : (
-        <>
-          <header className="app-header">
-            <h1>Conversation Graph Prototype</h1>
-            <p>線性對話 → 主題節點圖 → 可分支脈絡</p>
-            <div className="project-switcher">
-              <label htmlFor="project-select">切換專案：</label>
-              <select
-                id="project-select"
-                value={selectedProjectId}
-                onChange={(e) => setSelectedProjectId(e.target.value)}
-              >
-                {Object.keys(projects).map((pid) => (
-                  <option key={pid} value={pid}>
-                    {pid}
-                  </option>
-                ))}
-              </select>
-              <button
-                className="settings-gear-btn"
-                title="設定"
-                onClick={() => setShowSettings(true)}
-                aria-label="設定"
-              >
-                <svg
-                  width="22"
-                  height="22"
-                  viewBox="0 0 20 20"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
+    <NodeSizeContext.Provider value={nodeSize}>
+      <div className="app-container">
+        {showSettings ? (
+          <SettingsPage
+            projects={projects}
+            setProjects={setProjects}
+            setSelectedProjectId={setSelectedProjectId}
+            onBack={() => setShowSettings(false)}
+            nodeSize={nodeSize}
+            setNodeSize={setNodeSize}
+          />
+        ) : (
+          <>
+            <header className="app-header">
+              <h1>Conversation Graph Prototype</h1>
+              <p>線性對話 → 主題節點圖 → 可分支脈絡</p>
+              <div className="project-switcher">
+                <label htmlFor="project-select">切換專案：</label>
+                <select
+                  id="project-select"
+                  value={selectedProjectId}
+                  onChange={(e) => setSelectedProjectId(e.target.value)}
                 >
-                  <circle
-                    cx="10"
-                    cy="10"
-                    r="3.2"
-                    stroke="#0ea5e9"
-                    strokeWidth="1.5"
-                    fill="#fff"
-                  />
-                  <path
-                    d="M10 2.5v2M10 15.5v2M17.5 10h-2M4.5 10h-2M15.07 15.07l-1.42-1.42M6.35 6.35L4.93 4.93M15.07 4.93l-1.42 1.42M6.35 13.65l-1.42 1.42"
-                    stroke="#0ea5e9"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </button>
-            </div>
-          </header>
-
-          <main className="app-main">
-            <section className="graph-panel">
-              <ReactFlow<GraphFlowNode, Edge>
-                nodes={flowNodes}
-                edges={flowEdges}
-                nodeTypes={nodeTypes}
-                edgeTypes={edgeTypes}
-                onNodesChange={onNodesChange}
-                fitView
-                fitViewOptions={{ padding: 0.24 }}
-                minZoom={0.2}
-                maxZoom={1.6}
-                onNodeClick={(_event, node) => {
-                  setSelectedNodeId(node.id);
-                  setSelectedEdgeId(null);
-                }}
-                onEdgeClick={(_event, edge) => {
-                  setSelectedEdgeId(edge.id);
-                  setSelectedNodeId(null);
-                }}
-                onPaneClick={() => {
-                  setSelectedNodeId(null);
-                  setSelectedEdgeId(null);
-                }}
-                proOptions={{ hideAttribution: true }}
-              >
-                <Background
-                  variant={BackgroundVariant.Dots}
-                  gap={28}
-                  size={1.2}
-                  color="rgba(148, 163, 184, 0.35)"
-                />
-                <Controls />
-              </ReactFlow>
-            </section>
-
-            <aside className="detail-panel">
-              <h2>{selectedEdgeData ? "關係內容" : "節點內容"}</h2>
-
-              {selectedEdgeData ? (
-                <>
-                  <div className="field">
-                    <label>從</label>
-                    <div>{selectedEdgeData.source.topic}</div>
-                  </div>
-
-                  <div className="field">
-                    <label>到</label>
-                    <div>{selectedEdgeData.target.topic}</div>
-                  </div>
-
-                  <div className="field">
-                    <label>關係標籤</label>
-                    <input
-                      type="text"
-                      value={editRelationship}
-                      onChange={(e) => setEditRelationship(e.target.value)}
-                      placeholder="輸入關係描述（例：延伸、反駁、補充）..."
+                  {Object.keys(projects).map((pid) => (
+                    <option key={pid} value={pid}>
+                      {pid}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="settings-gear-btn"
+                  title="設定"
+                  onClick={() => setShowSettings(true)}
+                  aria-label="設定"
+                >
+                  <svg
+                    width="22"
+                    height="22"
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <circle
+                      cx="10"
+                      cy="10"
+                      r="3.2"
+                      stroke="#0ea5e9"
+                      strokeWidth="1.5"
+                      fill="#fff"
                     />
-                  </div>
-
-                  <div className="field">
-                    <label>關係內容</label>
-                    <textarea
-                      value={editEdgeContent}
-                      onChange={(e) => setEditEdgeContent(e.target.value)}
-                      placeholder="輸入這條關係的詳細說明..."
+                    <path
+                      d="M10 2.5v2M10 15.5v2M17.5 10h-2M4.5 10h-2M15.07 15.07l-1.42-1.42M6.35 6.35L4.93 4.93M15.07 4.93l-1.42 1.42M6.35 13.65l-1.42 1.42"
+                      stroke="#0ea5e9"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
                     />
-                  </div>
+                  </svg>
+                </button>
+              </div>
+            </header>
 
-                  {selectedEdgeData.target.edgeUpdatedAt && (
+            <main className="app-main">
+              <section className="graph-panel">
+                <ReactFlow<GraphFlowNode, Edge>
+                  nodes={flowNodes}
+                  edges={flowEdges}
+                  nodeTypes={nodeTypes}
+                  edgeTypes={edgeTypes}
+                  onNodesChange={onNodesChange}
+                  fitView
+                  fitViewOptions={{ padding: 0.24 }}
+                  minZoom={0.2}
+                  maxZoom={1.6}
+                  onNodeClick={(_event, node) => {
+                    setSelectedNodeId(node.id);
+                    setSelectedEdgeId(null);
+                  }}
+                  onEdgeClick={(_event, edge) => {
+                    setSelectedEdgeId(edge.id);
+                    setSelectedNodeId(null);
+                  }}
+                  onPaneClick={() => {
+                    setSelectedNodeId(null);
+                    setSelectedEdgeId(null);
+                  }}
+                  proOptions={{ hideAttribution: true }}
+                >
+                  <Background
+                    variant={BackgroundVariant.Dots}
+                    gap={28}
+                    size={1.2}
+                    color="rgba(148, 163, 184, 0.35)"
+                  />
+                  <Controls />
+                </ReactFlow>
+              </section>
+
+              <aside className="detail-panel">
+                <h2>{selectedEdgeData ? "關係內容" : "節點內容"}</h2>
+
+                {selectedEdgeData ? (
+                  <>
                     <div className="field">
-                      <label>最後更新</label>
-                      <div style={{ fontSize: "0.78rem", color: "#64748b" }}>
-                        {new Date(
-                          selectedEdgeData.target.edgeUpdatedAt,
-                        ).toLocaleString()}
+                      <label>從</label>
+                      <div>{selectedEdgeData.source.topic}</div>
+                    </div>
+
+                    <div className="field">
+                      <label>到</label>
+                      <div>{selectedEdgeData.target.topic}</div>
+                    </div>
+
+                    <div className="field">
+                      <label>關係標籤</label>
+                      <input
+                        type="text"
+                        value={editRelationship}
+                        onChange={(e) => setEditRelationship(e.target.value)}
+                        placeholder="輸入關係描述（例：延伸、反駁、補充）..."
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label>關係內容</label>
+                      <textarea
+                        value={editEdgeContent}
+                        onChange={(e) => setEditEdgeContent(e.target.value)}
+                        placeholder="輸入這條關係的詳細說明..."
+                      />
+                    </div>
+
+                    {selectedEdgeData.target.edgeUpdatedAt && (
+                      <div className="field">
+                        <label>最後更新</label>
+                        <div style={{ fontSize: "0.78rem", color: "#64748b" }}>
+                          {new Date(
+                            selectedEdgeData.target.edgeUpdatedAt,
+                          ).toLocaleString()}
+                        </div>
+                      </div>
+                    )}
+
+                    <button onClick={handleUpdateRelationship}>儲存關係</button>
+                  </>
+                ) : selectedNode ? (
+                  <>
+                    <div className="field">
+                      <label>ID</label>
+                      <div>{selectedNode.id}</div>
+                    </div>
+
+                    <div className="field">
+                      <label>Parent ID</label>
+                      <div>{selectedNode.parentId ?? "Root"}</div>
+                    </div>
+
+                    <div className="field">
+                      <label>Role</label>
+                      <select
+                        value={editRole}
+                        onChange={(event) =>
+                          setEditRole(event.target.value as ConversationRole)
+                        }
+                      >
+                        <option value="user">user</option>
+                        <option value="assistant">assistant</option>
+                        <option value="system">system</option>
+                      </select>
+                    </div>
+
+                    <div className="field">
+                      <label>Topic</label>
+                      <input
+                        type="text"
+                        value={editTopic}
+                        onChange={(event) => setEditTopic(event.target.value)}
+                        placeholder="輸入主題..."
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label>Content</label>
+                      <textarea
+                        value={editContent}
+                        onChange={(event) => setEditContent(event.target.value)}
+                        placeholder="輸入內容..."
+                      />
+                    </div>
+
+                    <div className="field">
+                      <label>UTC Timestamp</label>
+                      <div>
+                        {new Date(selectedNode.createdAt).toISOString()}
                       </div>
                     </div>
-                  )}
 
-                  <button onClick={handleUpdateRelationship}>儲存關係</button>
-                </>
-              ) : selectedNode ? (
-                <>
-                  <div className="field">
-                    <label>ID</label>
-                    <div>{selectedNode.id}</div>
-                  </div>
+                    <button onClick={handleUpdateSelectedNode}>
+                      儲存節點修改
+                    </button>
+                    <button onClick={handleDeleteSelectedNode}>
+                      刪除此節點（含子節點）
+                    </button>
 
-                  <div className="field">
-                    <label>Parent ID</label>
-                    <div>{selectedNode.parentId ?? "Root"}</div>
-                  </div>
+                    <hr />
 
-                  <div className="field">
-                    <label>Role</label>
-                    <select
-                      value={editRole}
-                      onChange={(event) =>
-                        setEditRole(event.target.value as ConversationRole)
-                      }
-                    >
-                      <option value="user">user</option>
-                      <option value="assistant">assistant</option>
-                      <option value="system">system</option>
-                    </select>
-                  </div>
+                    <h3>從此節點新增分支</h3>
 
-                  <div className="field">
-                    <label>Topic</label>
-                    <input
-                      type="text"
-                      value={editTopic}
-                      onChange={(event) => setEditTopic(event.target.value)}
-                      placeholder="輸入主題..."
-                    />
-                  </div>
+                    <div className="field">
+                      <label>分支主題</label>
+                      <input
+                        type="text"
+                        value={newBranchTopic}
+                        onChange={(event) =>
+                          setNewBranchTopic(event.target.value)
+                        }
+                        placeholder="輸入新的分支主題..."
+                      />
+                    </div>
 
-                  <div className="field">
-                    <label>Content</label>
-                    <textarea
-                      value={editContent}
-                      onChange={(event) => setEditContent(event.target.value)}
-                      placeholder="輸入內容..."
-                    />
-                  </div>
+                    <div className="field">
+                      <label>分支內容</label>
+                      <textarea
+                        value={newBranchContent}
+                        onChange={(event) =>
+                          setNewBranchContent(event.target.value)
+                        }
+                        placeholder="輸入新的分支內容..."
+                      />
+                    </div>
 
-                  <div className="field">
-                    <label>UTC Timestamp</label>
-                    <div>{new Date(selectedNode.createdAt).toISOString()}</div>
-                  </div>
-
-                  <button onClick={handleUpdateSelectedNode}>
-                    儲存節點修改
-                  </button>
-                  <button onClick={handleDeleteSelectedNode}>
-                    刪除此節點（含子節點）
-                  </button>
-
-                  <hr />
-
-                  <h3>從此節點新增分支</h3>
-
-                  <div className="field">
-                    <label>分支主題</label>
-                    <input
-                      type="text"
-                      value={newBranchTopic}
-                      onChange={(event) =>
-                        setNewBranchTopic(event.target.value)
-                      }
-                      placeholder="輸入新的分支主題..."
-                    />
-                  </div>
-
-                  <div className="field">
-                    <label>分支內容</label>
-                    <textarea
-                      value={newBranchContent}
-                      onChange={(event) =>
-                        setNewBranchContent(event.target.value)
-                      }
-                      placeholder="輸入新的分支內容..."
-                    />
-                  </div>
-
-                  <button onClick={handleAddBranch}>新增分支節點</button>
-                </>
-              ) : (
-                <p>請點選左側任一節點或邊查看內容。</p>
-              )}
-            </aside>
-          </main>
-        </>
-      )}
-    </div>
+                    <button onClick={handleAddBranch}>新增分支節點</button>
+                  </>
+                ) : (
+                  <p>請點選左側任一節點或邊查看內容。</p>
+                )}
+              </aside>
+            </main>
+          </>
+        )}
+      </div>
+    </NodeSizeContext.Provider>
   );
 }
 
