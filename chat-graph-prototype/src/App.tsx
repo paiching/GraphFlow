@@ -101,6 +101,15 @@ type PositionByNodeId = Record<string, { x: number; y: number }>;
 /** 存儲所有專案的位置資料（專案 id → PositionByNodeId） */
 type PositionByProjectId = Record<string, PositionByNodeId>;
 
+interface ProjectSnapshot {
+  id: string;
+  createdAt: string;
+  nodes: ConversationNode[];
+  positions: PositionByNodeId;
+}
+
+type SnapshotsByProjectId = Record<string, ProjectSnapshot[]>;
+
 // ─── 工具函數 ────────────────────────────────────────────────────────────────
 /** 將 ConversationNode 轉換成 ReactFlow 所需的 Node 格式 */
 function toGraphNode(
@@ -184,6 +193,8 @@ function getBranchPosition(
 const LOCAL_KEY = "conversation-projects";
 /** 節點位置存放在 localStorage 的 key */
 const POSITIONS_KEY = "conversation-node-positions";
+/** 快照資料存放在 localStorage 的 key */
+const SNAPSHOTS_KEY = "conversation-project-snapshots";
 
 /**
  * 將已存 localStorage 的位置套用到節點初始位置上。
@@ -249,6 +260,18 @@ function App() {
     const keys = Object.keys(initialProjects);
     return keys[0];
   });
+
+  const [snapshotsByProject, setSnapshotsByProject] =
+    useState<SnapshotsByProjectId>(() => {
+      try {
+        const raw = localStorage.getItem(SNAPSHOTS_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw) as SnapshotsByProjectId;
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch {
+        return {};
+      }
+    });
 
   // 目前專案的節點陣列（用 useMemo 避免不必要的重建）
   const conversationNodes = useMemo(
@@ -352,6 +375,11 @@ function App() {
     return { id: selectedEdgeId, source: sourceNode, target: targetNode };
   }, [selectedEdgeId, conversationNodes]);
 
+  const projectSnapshots = useMemo(
+    () => snapshotsByProject[selectedProjectId] || [],
+    [snapshotsByProject, selectedProjectId],
+  );
+
   // 切換專案時：清除選取狀態，带入該專案上次儲存的節點位置
   // 用 setTimeout 包裝避免 React 的 cascading setState 警告
   useEffect(() => {
@@ -424,6 +452,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem(LOCAL_KEY, JSON.stringify(projects));
   }, [projects]);
+
+  useEffect(() => {
+    localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(snapshotsByProject));
+  }, [snapshotsByProject]);
 
   // 節點選取變動時，將節點現有資料填充到右側面板表單
   // 用 setTimeout 避免 cascading setState
@@ -516,6 +548,49 @@ function App() {
       setSelectedEdgeId(null);
     },
     [conversationNodes, setConversationNodes, setFlowNodes],
+  );
+
+  const handleCreateSnapshot = useCallback(() => {
+    const currentPositions = positionsByProject[selectedProjectId] || {};
+    const snapshot: ProjectSnapshot = {
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+      nodes: conversationNodes.map((node) => ({ ...node })),
+      positions: Object.fromEntries(
+        Object.entries(currentPositions).map(([id, pos]) => [id, { ...pos }]),
+      ),
+    };
+
+    setSnapshotsByProject((prev) => {
+      const existing = prev[selectedProjectId] || [];
+      const next = [snapshot, ...existing].slice(0, 50);
+      return {
+        ...prev,
+        [selectedProjectId]: next,
+      };
+    });
+  }, [conversationNodes, positionsByProject, selectedProjectId]);
+
+  const handleRestoreSnapshot = useCallback(
+    (snapshotId: string) => {
+      const snapshot = projectSnapshots.find((item) => item.id === snapshotId);
+      if (!snapshot) return;
+
+      const restoredNodes = snapshot.nodes.map((node) => ({ ...node }));
+      const restoredPositions = Object.fromEntries(
+        Object.entries(snapshot.positions).map(([id, pos]) => [id, { ...pos }]),
+      );
+
+      setConversationNodes(() => restoredNodes);
+      setFlowNodes(applySavedPositions(restoredNodes, restoredPositions));
+      setPositionsByProject((prev) => ({
+        ...prev,
+        [selectedProjectId]: restoredPositions,
+      }));
+      setSelectedNodeId(null);
+      setSelectedEdgeId(null);
+    },
+    [projectSnapshots, selectedProjectId, setConversationNodes, setFlowNodes],
   );
 
   // 選到節點時，按 Tab 可快速新增子節點
@@ -961,6 +1036,52 @@ function App() {
                 ) : (
                   <p>請點選左側任一節點或邊查看內容。</p>
                 )}
+
+                <hr />
+
+                <section className="snapshot-panel">
+                  <div className="snapshot-panel__header">
+                    <h3>Snapshot Timeline</h3>
+                    <button
+                      className="snapshot-btn"
+                      type="button"
+                      onClick={handleCreateSnapshot}
+                    >
+                      建立 Snapshot
+                    </button>
+                  </div>
+
+                  {projectSnapshots.length === 0 ? (
+                    <p className="snapshot-empty">
+                      尚無 snapshot，先建立第一個版本。
+                    </p>
+                  ) : (
+                    <ol className="snapshot-timeline">
+                      {projectSnapshots.map((snapshot) => (
+                        <li key={snapshot.id} className="snapshot-item">
+                          <div className="snapshot-item__dot" />
+                          <div className="snapshot-item__content">
+                            <div className="snapshot-item__meta">
+                              <span className="snapshot-item__time">
+                                {new Date(snapshot.createdAt).toLocaleString()}
+                              </span>
+                              <span className="snapshot-item__count">
+                                {snapshot.nodes.length} nodes
+                              </span>
+                            </div>
+                            <button
+                              className="snapshot-item__restore"
+                              type="button"
+                              onClick={() => handleRestoreSnapshot(snapshot.id)}
+                            >
+                              還原到這版
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </section>
               </aside>
             </main>
           </>
