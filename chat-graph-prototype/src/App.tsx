@@ -489,6 +489,7 @@ function App() {
   const [appliedSearchKeyword, setAppliedSearchKeyword] = useState("");
   const [appliedSearchScope, setAppliedSearchScope] =
     useState<SearchScope>("all");
+  const [newProjectName, setNewProjectName] = useState("");
 
   const normalizedSearchKeyword = useMemo(
     () => appliedSearchKeyword.trim().toLowerCase(),
@@ -499,6 +500,36 @@ function App() {
     setAppliedSearchKeyword(searchKeywordInput);
     setAppliedSearchScope(searchScopeInput);
   }, [searchKeywordInput, searchScopeInput]);
+
+  const handleCreateProject = useCallback(() => {
+    const trimmed = newProjectName.trim();
+    if (!trimmed) {
+      alert("請輸入專案名稱");
+      return;
+    }
+
+    if (projects[trimmed]) {
+      alert("專案名稱已存在，請使用不同名稱");
+      return;
+    }
+
+    const rootNode: ConversationNode = {
+      id: crypto.randomUUID(),
+      parentId: null,
+      role: "筆記",
+      topic: trimmed,
+      content: "新專案已建立，請開始新增節點內容。",
+      createdAt: new Date().toISOString(),
+    };
+
+    setProjects((prev) => ({
+      ...prev,
+      [trimmed]: [rootNode],
+    }));
+
+    setSelectedProjectId(trimmed);
+    setNewProjectName("");
+  }, [newProjectName, projects]);
 
   const searchResult = useMemo(() => {
     if (!normalizedSearchKeyword) {
@@ -1795,6 +1826,36 @@ function App() {
                   </>
                 ) : (
                   <p>請點選左側任一節點或邊查看內容。</p>
+                )}
+
+                {isDashboardView && (
+                  <section className="dashboard-project-panel">
+                    <div className="dashboard-project-panel__header">
+                      <h3>新增專案</h3>
+                      <span>{Object.keys(projects).length} 個專案</span>
+                    </div>
+                    <div className="dashboard-project-panel__form">
+                      <input
+                        type="text"
+                        value={newProjectName}
+                        onChange={(event) => setNewProjectName(event.target.value)}
+                        placeholder="輸入新專案名稱..."
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            handleCreateProject();
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="dashboard-project-panel__create"
+                        onClick={handleCreateProject}
+                      >
+                        建立專案
+                      </button>
+                    </div>
+                  </section>
                 )}
 
                 {isDashboardView && <hr />}

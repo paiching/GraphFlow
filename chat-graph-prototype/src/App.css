@@ -1092,6 +1092,65 @@ button:hover {
   background: rgba(37, 99, 235, 0.2);
 }
 
+.dashboard-project-panel {
+  margin-top: 4px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.dashboard-project-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.dashboard-project-panel__header h3 {
+  margin: 0;
+  font-size: 14px;
+  color: #334155;
+}
+
+.dashboard-project-panel__header span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.dashboard-project-panel__form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.dashboard-project-panel__form input {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 10px;
+  background: #fff;
+  color: #1f2937;
+  font-size: 0.88rem;
+}
+
+.dashboard-project-panel__form input:focus {
+  outline: none;
+  border-color: rgba(14, 165, 233, 0.65);
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.14);
+}
+
+.dashboard-project-panel__create {
+  width: auto;
+  margin: 0;
+  padding: 7px 12px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  box-shadow: none;
+}
+
 .node-dialogue-panel {
   margin-bottom: 16px;
   padding: 12px;
