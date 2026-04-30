@@ -1,12 +1,382 @@
+/* ===== 設定頁面 ===== */
+.settings-page {
+  min-height: 100vh;
+  width: 100%;
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 50%, #f8fafc 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  box-sizing: border-box;
+}
+
+.settings-card {
+  background: #fff;
+  border-radius: 20px;
+  box-shadow:
+    0 8px 40px 0 rgba(14, 165, 233, 0.13),
+    0 2px 8px rgba(30, 41, 59, 0.08);
+  padding: 2.5rem 2.8rem 2.2rem 2.8rem;
+  min-width: 380px;
+  max-width: 480px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-bottom: 1.5px solid #e0f2fe;
+  padding-bottom: 1.1rem;
+}
+
+.settings-header h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+}
+
+.settings-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.settings-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.72rem 1.3rem;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.97rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.18s,
+    transform 0.12s,
+    box-shadow 0.18s;
+  width: 100%;
+  justify-content: center;
+}
+
+.settings-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(14, 165, 233, 0.18);
+}
+
+.settings-btn:active {
+  transform: translateY(0);
+}
+
+.settings-btn.export {
+  background: linear-gradient(90deg, #0ea5e9 0%, #38bdf8 100%);
+  color: #fff;
+}
+
+.settings-btn.export:hover {
+  background: linear-gradient(90deg, #0284c7 0%, #0ea5e9 100%);
+}
+
+.settings-btn.import {
+  background: linear-gradient(90deg, #6366f1 0%, #818cf8 100%);
+  color: #fff;
+}
+
+.settings-btn.import:hover {
+  background: linear-gradient(90deg, #4f46e5 0%, #6366f1 100%);
+}
+
+.settings-btn.back {
+  background: #f1f5f9;
+  color: #475569;
+  margin-top: 0.25rem;
+  border: 1.5px solid #e2e8f0;
+}
+
+.settings-btn.back:hover {
+  background: #e2e8f0;
+  box-shadow: none;
+}
+
+.settings-hint {
+  font-size: 0.88rem;
+  color: #94a3b8;
+  margin: 0;
+  line-height: 1.55;
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 0.65rem 0.9rem;
+  border-left: 3px solid #bae6fd;
+}
+
+/* 設定頁面 modal 樣式 */
+.settings-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.settings-content {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px 0 rgba(30, 41, 59, 0.18);
+  padding: 36px 40px 28px 40px;
+  min-width: 340px;
+  min-height: 180px;
+  position: relative;
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1.2em;
+}
+.settings-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.settings-content {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px 0 rgba(30, 41, 59, 0.18);
+  padding: 36px 40px 28px 40px;
+  min-width: 340px;
+  min-height: 180px;
+  position: relative;
+  z-index: 10001;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1.2em;
+}
+.settings-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(100, 116, 139, 0.18);
+  z-index: 9998;
+}
+.app-header h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 0.25em;
+  color: #334155;
+}
+.app-header p {
+  color: #64748b;
+  margin-bottom: 0.5em;
+}
+#.project-switcher {
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.settings-gear-btn {
+  background: #fff;
+  border: 1.5px solid #0ea5e9;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+  cursor: pointer;
+  transition:
+    background 0.18s,
+    border 0.18s;
+  box-shadow: 0 1px 4px 0 rgba(56, 189, 248, 0.07);
+  padding: 0;
+}
+.settings-gear-btn:hover {
+  background: #e0f2fe;
+  border-color: #38bdf8;
+}
+.settings-gear-btn svg {
+  display: block;
+}
+#project-select {
+  padding: 6px 16px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  font-size: 1rem;
+  color: #334155;
+  transition: border 0.2s;
+}
+#project-select:focus {
+  border-color: #38bdf8;
+  outline: none;
+}
+.app-main {
+  display: flex;
+  flex-direction: row;
+  height: calc(100vh - 90px);
+  background: #f1f5f9;
+}
+.graph-panel {
+  flex: 2 1 0%;
+  min-width: 0;
+  border-right: 1px solid #e2e8f0;
+  background: #f8fafc;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 0 0 0 0;
+}
+.detail-panel {
+  flex: 1 1 350px;
+  max-width: 420px;
+  background: #fff;
+  padding: 24px 18px 18px 18px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.2em;
+  box-shadow: none;
+  border-radius: 0;
+}
+.detail-panel h2 {
+  font-size: 1.3rem;
+  color: #334155;
+  margin-bottom: 0.5em;
+}
+.field {
+  margin-bottom: 1.1em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+}
+.field label {
+  font-size: 0.98em;
+  color: #64748b;
+  font-weight: 500;
+  margin-bottom: 0.1em;
+}
+.field input[type="text"],
+.field select,
+.field textarea {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  font-size: 1em;
+  background: #f8fafc;
+  color: #334155;
+  transition: border 0.2s;
+}
+.field input[type="text"]:focus,
+.field select:focus,
+.field textarea:focus {
+  border-color: #38bdf8;
+  outline: none;
+}
+.field textarea {
+  min-height: 60px;
+  resize: vertical;
+}
+button {
+  padding: 8px 18px;
+  border-radius: 6px;
+  border: none;
+  background: linear-gradient(90deg, #38bdf8 0%, #0ea5e9 100%);
+  color: #fff;
+  font-size: 1em;
+  font-weight: 600;
+  margin-right: 10px;
+  margin-top: 6px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px 0 rgba(56, 189, 248, 0.08);
+  transition:
+    background 0.2s,
+    box-shadow 0.2s;
+}
+button:hover {
+  background: linear-gradient(90deg, #0ea5e9 0%, #38bdf8 100%);
+  box-shadow: 0 4px 16px 0 rgba(56, 189, 248, 0.13);
+}
+hr {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 1.2em 0;
+}
+.graph-node {
+  background: #fff;
+  border: 2px solid #38bdf8;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px 0 rgba(56, 189, 248, 0.08);
+  padding: 18px 0 12px 0;
+  width: 120px;
+  height: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3em;
+  transition:
+    border 0.2s,
+    box-shadow 0.2s;
+}
+.graph-node--user {
+  border-color: #38bdf8;
+}
+.graph-node--assistant {
+  border-color: #a3e635;
+}
+.graph-node--system {
+  border-color: #fbbf24;
+}
+.graph-node.is-selected {
+  box-shadow: 0 0 0 4px #bae6fd;
+}
+.graph-node__role {
+  font-size: 0.95em;
+  color: #64748b;
+  margin-bottom: 0.2em;
+}
+.graph-node__title {
+  font-size: 1.1em;
+  color: #334155;
+  font-weight: 600;
+}
+.graph-node__handle {
+  background: #38bdf8;
+  border: none;
+}
 * {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  font-family: 'Segoe UI', 'Noto Sans TC', sans-serif;
+  font-family: "Segoe UI", "Noto Sans TC", sans-serif;
   background:
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.9), rgba(241, 245, 249, 0.94)),
+    radial-gradient(
+      circle at top,
+      rgba(255, 255, 255, 0.9),
+      rgba(241, 245, 249, 0.94)
+    ),
     linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
   color: #122033;
 }
@@ -49,8 +419,16 @@ body {
   position: relative;
   height: 100%;
   background:
-    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.68)),
-    linear-gradient(180deg, rgba(248, 250, 252, 0.78), rgba(241, 245, 249, 0.55));
+    radial-gradient(
+      circle at 20% 20%,
+      rgba(255, 255, 255, 0.92),
+      rgba(255, 255, 255, 0.68)
+    ),
+    linear-gradient(
+      180deg,
+      rgba(248, 250, 252, 0.78),
+      rgba(241, 245, 249, 0.55)
+    );
 }
 
 .graph-panel__hint {
@@ -333,7 +711,10 @@ button:hover {
   border: 1px solid rgba(37, 99, 235, 0.14);
   cursor: pointer;
   box-shadow: none;
-  transition: background 120ms ease, border-color 120ms ease, transform 100ms ease;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    transform 100ms ease;
 }
 
 .connect-modal__option:hover {
