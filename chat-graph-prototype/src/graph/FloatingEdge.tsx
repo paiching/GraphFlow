@@ -47,7 +47,8 @@ function FloatingEdge({ id, source, target, data }: EdgeProps) {
 
   const edgeData = data as GraphEdgeData | undefined;
   const isSelected = edgeData?.isSelected ?? false;
-  const isActive = isHovered || isSelected;
+  const isSearchMatch = edgeData?.isSearchMatch ?? false;
+  const isActive = isHovered || isSelected || isSearchMatch;
   const showArrow = edgeData?.showArrow ?? false;
   const strokeColor = isActive ? "#3b82f6" : "rgba(100, 116, 139, 0.55)";
   const strokeWidth = isActive ? 2.5 : 1.5;

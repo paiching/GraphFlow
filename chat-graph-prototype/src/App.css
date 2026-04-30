@@ -282,6 +282,60 @@
   flex-wrap: wrap;
 }
 
+.header-tools {
+  margin-top: 12px;
+}
+
+.graph-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.graph-search__input {
+  flex: 1 1 280px;
+  min-width: 220px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+}
+
+.graph-search__input:focus,
+.graph-search__scope:focus {
+  outline: none;
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+}
+
+.graph-search__scope {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+}
+
+.graph-search__button {
+  width: auto;
+  margin-top: 0;
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 0.92rem;
+  box-shadow: none;
+}
+
+.graph-search__count {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.12);
+  color: #0f4c66;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
 .settings-gear-btn {
   background: #fff;
   border: 1.5px solid #0ea5e9;
@@ -667,6 +721,13 @@ button:hover {
   box-shadow:
     0 0 0 6px rgba(59, 130, 246, 0.12),
     0 30px 60px rgba(59, 130, 246, 0.18);
+}
+
+.graph-node.is-search-match {
+  border-color: rgba(245, 158, 11, 0.52);
+  box-shadow:
+    0 0 0 6px rgba(251, 191, 36, 0.16),
+    0 28px 58px rgba(245, 158, 11, 0.2);
 }
 
 .graph-node--user {

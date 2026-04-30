@@ -19,6 +19,7 @@ function CircleNode({ data, selected }: NodeProps<GraphFlowNode>) {
         className={[
           "graph-node",
           `graph-node--${data.role}`,
+          data.isSearchMatch ? "is-search-match" : "",
           selected ? "is-selected" : "",
         ]
           .filter(Boolean)

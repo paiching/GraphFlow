@@ -4,12 +4,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import SettingsPage from "./SettingsPage";
 import CircleNode from "./graph/CircleNode";
 import FloatingEdge from "./graph/FloatingEdge";
+import GraphSearchBar from "./graph/GraphSearchBar";
 import {
   DEFAULT_NODE_SIZE,
   NODE_SIZE_KEY,
   NodeSizeContext,
 } from "./graph/NodeSizeContext";
 import type { GraphEdgeData, GraphFlowNode } from "./graph/types";
+import type { SearchScope } from "./graph/GraphSearchBar";
 // ─── ReactFlow 圖形化元件與工具函式 ───────────────────────────────────────────
 import {
   ReactFlow,
@@ -335,6 +337,84 @@ function App() {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [editRelationship, setEditRelationship] = useState("");
   const [editEdgeContent, setEditEdgeContent] = useState("");
+  const [searchKeywordInput, setSearchKeywordInput] = useState("");
+  const [searchScopeInput, setSearchScopeInput] = useState<SearchScope>("all");
+  const [appliedSearchKeyword, setAppliedSearchKeyword] = useState("");
+  const [appliedSearchScope, setAppliedSearchScope] =
+    useState<SearchScope>("all");
+
+  const normalizedSearchKeyword = useMemo(
+    () => appliedSearchKeyword.trim().toLowerCase(),
+    [appliedSearchKeyword],
+  );
+
+  const handleSearch = useCallback(() => {
+    setAppliedSearchKeyword(searchKeywordInput);
+    setAppliedSearchScope(searchScopeInput);
+  }, [searchKeywordInput, searchScopeInput]);
+
+  const searchResult = useMemo(() => {
+    if (!normalizedSearchKeyword) {
+      return {
+        nodeIds: [] as string[],
+        edgeIds: [] as string[],
+      };
+    }
+
+    const shouldSearchNodes =
+      appliedSearchScope === "nodes" || appliedSearchScope === "all";
+    const shouldSearchEdges =
+      appliedSearchScope === "edges" || appliedSearchScope === "all";
+    const nodeById = new Map(conversationNodes.map((node) => [node.id, node]));
+    const nodeIds: string[] = [];
+    const edgeIds: string[] = [];
+
+    if (shouldSearchNodes) {
+      for (const node of conversationNodes) {
+        const haystack = [node.id, node.role, node.topic, node.content]
+          .filter(Boolean)
+          .join("\n")
+          .toLowerCase();
+
+        if (haystack.includes(normalizedSearchKeyword)) {
+          nodeIds.push(node.id);
+        }
+      }
+    }
+
+    if (shouldSearchEdges) {
+      for (const node of conversationNodes) {
+        if (!node.parentId) continue;
+        const sourceNode = nodeById.get(node.parentId);
+        const edgeId = `edge-${node.parentId}-${node.id}`;
+        const haystack = [
+          sourceNode?.topic,
+          node.topic,
+          node.relationship,
+          node.edgeContent,
+        ]
+          .filter(Boolean)
+          .join("\n")
+          .toLowerCase();
+
+        if (haystack.includes(normalizedSearchKeyword)) {
+          edgeIds.push(edgeId);
+        }
+      }
+    }
+
+    return { nodeIds, edgeIds };
+  }, [appliedSearchScope, conversationNodes, normalizedSearchKeyword]);
+
+  const searchNodeIdSet = useMemo(
+    () => new Set(searchResult.nodeIds),
+    [searchResult.nodeIds],
+  );
+  const searchEdgeIdSet = useMemo(
+    () => new Set(searchResult.edgeIds),
+    [searchResult.edgeIds],
+  );
+  const searchResultCount = searchResult.nodeIds.length + searchResult.edgeIds.length;
 
   // 目前選中節點的完整資料（來自 conversationNodes）
   const selectedNode = useMemo(
@@ -367,12 +447,26 @@ function App() {
           data: {
             label: n.relationship ?? "",
             isSelected: edgeId === selectedEdgeId,
+            isSearchMatch: searchEdgeIdSet.has(edgeId),
             showArrow,
           } as GraphEdgeData,
           style: { stroke: "rgba(100, 116, 139, 0.55)", strokeWidth: 1.5 },
         };
       });
-  }, [conversationNodes, selectedEdgeId]);
+  }, [conversationNodes, searchEdgeIdSet, selectedEdgeId]);
+
+  const displayedFlowNodes = useMemo(
+    () =>
+      flowNodes.map((node) => ({
+        ...node,
+        selected: node.id === selectedNodeId,
+        data: {
+          ...node.data,
+          isSearchMatch: searchNodeIdSet.has(node.id),
+        },
+      })),
+    [flowNodes, searchNodeIdSet, selectedNodeId],
+  );
 
   // 目前選中邊線的來源 / 目標節點完整資訊
   const selectedEdgeData = useMemo(() => {
@@ -905,13 +999,23 @@ function App() {
                   </svg>
                 </button>
               </div>
+              <div className="header-tools">
+                <GraphSearchBar
+                  query={searchKeywordInput}
+                  scope={searchScopeInput}
+                  resultCount={searchResultCount}
+                  onQueryChange={setSearchKeywordInput}
+                  onScopeChange={setSearchScopeInput}
+                  onSearch={handleSearch}
+                />
+              </div>
             </header>
 
             <main className="app-main">
               {/* 左側：ReactFlow 圖譜畫布 */}
               <section className="graph-panel">
                 <ReactFlow<GraphFlowNode, Edge>
-                  nodes={flowNodes}
+                  nodes={displayedFlowNodes}
                   edges={flowEdges}
                   nodeTypes={nodeTypes}
                   edgeTypes={edgeTypes}
