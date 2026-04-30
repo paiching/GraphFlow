@@ -195,6 +195,8 @@ const LOCAL_KEY = "conversation-projects";
 const POSITIONS_KEY = "conversation-node-positions";
 /** 快照資料存放在 localStorage 的 key */
 const SNAPSHOTS_KEY = "conversation-project-snapshots";
+/** snapshot 播放間隔（毫秒）設定 key */
+const SNAPSHOT_PLAYBACK_INTERVAL_KEY = "snapshot-playback-interval-ms";
 
 /**
  * 將已存 localStorage 的位置套用到節點初始位置上。
@@ -272,6 +274,17 @@ function App() {
         return {};
       }
     });
+
+  const [snapshotPlaybackMs, setSnapshotPlaybackMs] = useState<number>(() => {
+    const raw = localStorage.getItem(SNAPSHOT_PLAYBACK_INTERVAL_KEY);
+    const parsed = raw ? Number(raw) : 1200;
+    if (!Number.isFinite(parsed)) return 1200;
+    return Math.min(10000, Math.max(300, Math.round(parsed)));
+  });
+  const [isSnapshotPlaying, setIsSnapshotPlaying] = useState(false);
+  const [snapshotPlaybackIndex, setSnapshotPlaybackIndex] = useState<
+    number | null
+  >(null);
 
   // 目前專案的節點陣列（用 useMemo 避免不必要的重建）
   const conversationNodes = useMemo(
@@ -380,10 +393,22 @@ function App() {
     [snapshotsByProject, selectedProjectId],
   );
 
+  const snapshotPlaybackQueue = useMemo(
+    () => [...projectSnapshots].reverse(),
+    [projectSnapshots],
+  );
+
+  const activePlaybackSnapshotId = useMemo(() => {
+    if (!isSnapshotPlaying || snapshotPlaybackIndex === null) return null;
+    return snapshotPlaybackQueue[snapshotPlaybackIndex]?.id ?? null;
+  }, [isSnapshotPlaying, snapshotPlaybackIndex, snapshotPlaybackQueue]);
+
   // 切換專案時：清除選取狀態，带入該專案上次儲存的節點位置
   // 用 setTimeout 包裝避免 React 的 cascading setState 警告
   useEffect(() => {
     const timer = setTimeout(() => {
+      setIsSnapshotPlaying(false);
+      setSnapshotPlaybackIndex(null);
       setSelectedNodeId(null);
       setSelectedEdgeId(null);
       setFlowNodes(
@@ -456,6 +481,13 @@ function App() {
   useEffect(() => {
     localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(snapshotsByProject));
   }, [snapshotsByProject]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      SNAPSHOT_PLAYBACK_INTERVAL_KEY,
+      String(snapshotPlaybackMs),
+    );
+  }, [snapshotPlaybackMs]);
 
   // 節點選取變動時，將節點現有資料填充到右側面板表單
   // 用 setTimeout 避免 cascading setState
@@ -571,11 +603,8 @@ function App() {
     });
   }, [conversationNodes, positionsByProject, selectedProjectId]);
 
-  const handleRestoreSnapshot = useCallback(
-    (snapshotId: string) => {
-      const snapshot = projectSnapshots.find((item) => item.id === snapshotId);
-      if (!snapshot) return;
-
+  const applySnapshot = useCallback(
+    (snapshot: ProjectSnapshot) => {
       const restoredNodes = snapshot.nodes.map((node) => ({ ...node }));
       const restoredPositions = Object.fromEntries(
         Object.entries(snapshot.positions).map(([id, pos]) => [id, { ...pos }]),
@@ -590,8 +619,70 @@ function App() {
       setSelectedNodeId(null);
       setSelectedEdgeId(null);
     },
-    [projectSnapshots, selectedProjectId, setConversationNodes, setFlowNodes],
+    [selectedProjectId, setConversationNodes, setFlowNodes],
   );
+
+  const handleRestoreSnapshot = useCallback(
+    (snapshotId: string) => {
+      const snapshot = projectSnapshots.find((item) => item.id === snapshotId);
+      if (!snapshot) return;
+
+      setIsSnapshotPlaying(false);
+      setSnapshotPlaybackIndex(null);
+      applySnapshot(snapshot);
+    },
+    [projectSnapshots, applySnapshot],
+  );
+
+  const handleToggleSnapshotPlayback = useCallback(() => {
+    if (isSnapshotPlaying) {
+      setIsSnapshotPlaying(false);
+      setSnapshotPlaybackIndex(null);
+      return;
+    }
+
+    if (snapshotPlaybackQueue.length === 0) return;
+
+    setIsSnapshotPlaying(true);
+    setSnapshotPlaybackIndex(0);
+  }, [isSnapshotPlaying, snapshotPlaybackQueue.length]);
+
+  useEffect(() => {
+    if (!isSnapshotPlaying) return;
+    if (snapshotPlaybackQueue.length === 0) {
+      setIsSnapshotPlaying(false);
+      setSnapshotPlaybackIndex(null);
+      return;
+    }
+
+    const index = snapshotPlaybackIndex ?? 0;
+    const currentSnapshot = snapshotPlaybackQueue[index];
+    if (!currentSnapshot) {
+      setIsSnapshotPlaying(false);
+      setSnapshotPlaybackIndex(null);
+      return;
+    }
+
+    applySnapshot(currentSnapshot);
+
+    if (index >= snapshotPlaybackQueue.length - 1) {
+      setIsSnapshotPlaying(false);
+      setSnapshotPlaybackIndex(null);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setSnapshotPlaybackIndex((prev) => (prev === null ? 1 : prev + 1));
+    }, snapshotPlaybackMs);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    isSnapshotPlaying,
+    snapshotPlaybackIndex,
+    snapshotPlaybackMs,
+    snapshotPlaybackQueue,
+    applySnapshot,
+  ]);
 
   // 選到節點時，按 Tab 可快速新增子節點
   useEffect(() => {
@@ -1042,13 +1133,43 @@ function App() {
                 <section className="snapshot-panel">
                   <div className="snapshot-panel__header">
                     <h3>Snapshot Timeline</h3>
-                    <button
-                      className="snapshot-btn"
-                      type="button"
-                      onClick={handleCreateSnapshot}
-                    >
-                      建立 Snapshot
-                    </button>
+                    <div className="snapshot-panel__actions">
+                      <button
+                        className="snapshot-btn"
+                        type="button"
+                        onClick={handleCreateSnapshot}
+                      >
+                        建立 Snapshot
+                      </button>
+                      <button
+                        className="snapshot-btn snapshot-btn--play"
+                        type="button"
+                        onClick={handleToggleSnapshotPlayback}
+                        disabled={projectSnapshots.length === 0}
+                      >
+                        {isSnapshotPlaying ? "停止播放" : "播放 Snapshot"}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="snapshot-interval">
+                    <label htmlFor="snapshot-interval-input">
+                      播放間隔（ms）
+                    </label>
+                    <input
+                      id="snapshot-interval-input"
+                      type="number"
+                      min={300}
+                      max={10000}
+                      step={100}
+                      value={snapshotPlaybackMs}
+                      onChange={(event) => {
+                        const next = Number(event.target.value);
+                        if (!Number.isFinite(next)) return;
+                        const clamped = Math.min(10000, Math.max(300, next));
+                        setSnapshotPlaybackMs(Math.round(clamped));
+                      }}
+                    />
                   </div>
 
                   {projectSnapshots.length === 0 ? (
@@ -1058,7 +1179,14 @@ function App() {
                   ) : (
                     <ol className="snapshot-timeline">
                       {projectSnapshots.map((snapshot) => (
-                        <li key={snapshot.id} className="snapshot-item">
+                        <li
+                          key={snapshot.id}
+                          className={`snapshot-item ${
+                            activePlaybackSnapshotId === snapshot.id
+                              ? "is-playing"
+                              : ""
+                          }`}
+                        >
                           <div className="snapshot-item__dot" />
                           <div className="snapshot-item__content">
                             <div className="snapshot-item__meta">

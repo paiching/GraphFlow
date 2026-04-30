@@ -847,6 +847,12 @@ button:hover {
   margin-bottom: 10px;
 }
 
+.snapshot-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .snapshot-panel__header h3 {
   margin: 0;
   font-size: 14px;
@@ -860,6 +866,42 @@ button:hover {
   border-radius: 999px;
   font-size: 12px;
   box-shadow: none;
+}
+
+.snapshot-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.snapshot-btn--play {
+  background: linear-gradient(135deg, #16a34a, #22c55e);
+}
+
+.snapshot-btn--play:hover {
+  background: linear-gradient(135deg, #15803d, #16a34a);
+}
+
+.snapshot-interval {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.snapshot-interval label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.snapshot-interval input {
+  width: 120px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(255, 255, 255, 0.95);
+  color: #1f2937;
 }
 
 .snapshot-empty {
@@ -898,6 +940,16 @@ button:hover {
   border-radius: 12px;
   padding: 10px;
   background: rgba(255, 255, 255, 0.85);
+}
+
+.snapshot-item.is-playing .snapshot-item__dot {
+  background: #16a34a;
+  box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.16);
+}
+
+.snapshot-item.is-playing .snapshot-item__content {
+  border-color: rgba(22, 163, 74, 0.35);
+  background: rgba(240, 253, 244, 0.85);
 }
 
 .snapshot-item__meta {
